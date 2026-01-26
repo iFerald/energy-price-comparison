@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.const import CONF_NAME
 
 from .const import (
     DOMAIN,
@@ -20,60 +21,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._abort_if_unique_id_configured()
 
         if user_input is None:
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_PRICE_ENTITY,
-                            default="sensor.rce_pse_price",
-                        ): str,
-                        vol.Required(
-                            CONF_ENERGY_ENTITY,
-                            default="sensor.deye_daily_energy_bought",
-                        ): str,
-                        vol.Required(
-                            CONF_G11_RATE,
-                            default=DEFAULT_G11_RATE,
-                        ): vol.Coerce(float),
-                    }
-                ),
+            schema = vol.Schema(
+                {
+                    vol.Optional(CONF_NAME, default="Energy Price Comparison"): str,
+                    vol.Required(CONF_PRICE_ENTITY, default="sensor.rce_pse_price"): str,
+                    vol.Required(CONF_ENERGY_ENTITY, default="sensor.deye_daily_energy_bought"): str,
+                    vol.Required(CONF_G11_RATE, default=DEFAULT_G11_RATE): vol.Coerce(float),
+                }
             )
+            return self.async_show_form(step_id="user", data_schema=schema)
 
-        return self.async_create_entry(
-            title="Energy Price Comparison",
-            data=user_input,
-        )
-
-    async def async_step_options(self, user_input=None):
-        return await OptionsFlowHandler(self.hass, self.context["entry_id"]).async_step_init(user_input)
-
-
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, hass, entry_id):
-        self.hass = hass
-        self.entry = hass.config_entries.async_get_entry(entry_id)
-
-    async def async_step_init(self, user_input=None):
-        if user_input is None:
-            return self.async_show_form(
-                step_id="init",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_PRICE_ENTITY,
-                            default=self.entry.data[CONF_PRICE_ENTITY],
-                        ): str,
-                        vol.Required(
-                            CONF_ENERGY_ENTITY,
-                            default=self.entry.data[CONF_ENERGY_ENTITY],
-                        ): str,
-                        vol.Required(
-                            CONF_G11_RATE,
-                            default=self.entry.data[CONF_G11_RATE],
-                        ): vol.Coerce(float),
-                    }
-                ),
-            )
-
-        return self.async_create_entry(title="", data=user_input)
+        title = user_input.get(CONF_NAME, "Energy Price Comparison")
+        data = {
+            CONF_PRICE_ENTITY: user_input[CONF_PRICE_ENTITY],
+            CONF_ENERGY_ENTITY: user_input[CONF_ENERGY_ENTITY],
+            CONF_G11_RATE: user_input[CONF_G11_RATE],
+        }
+        return self.async_create_entry(title=title, data=data)
