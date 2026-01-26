@@ -1,0 +1,430 @@
+input_number:
+  g11_rate:
+    name: G11 rate (PLN/kWh)
+    min: 0
+    max: 10
+    step: 0.001
+    unit_of_measurement: PLN/kWh
+    mode: box
+  g12_day_rate:
+    name: G12 day rate (PLN/kWh)
+    min: 0
+    max: 10
+    step: 0.001
+    unit_of_measurement: PLN/kWh
+    mode: box
+  g12_night_rate:
+    name: G12 night rate (PLN/kWh)
+    min: 0
+    max: 10
+    step: 0.001
+    unit_of_measurement: PLN/kWh
+    mode: box
+  g12w_day_rate:
+    name: G12w day rate (PLN/kWh)
+    min: 0
+    max: 10
+    step: 0.001
+    unit_of_measurement: PLN/kWh
+    mode: box
+  g12w_night_rate:
+    name: G12w night rate (PLN/kWh)
+    min: 0
+    max: 10
+    step: 0.001
+    unit_of_measurement: PLN/kWh
+    mode: box
+  dynamic_rate:
+    name: Dynamic rate (PLN/kWh)
+    min: 0
+    max: 20
+    step: 0.001
+    unit_of_measurement: PLN/kWh
+    mode: box
+
+input_datetime:
+  g12_day_range1_start:
+    name: G12 day range 1 start
+    has_date: false
+    has_time: true
+  g12_day_range1_end:
+    name: G12 day range 1 end
+    has_date: false
+    has_time: true
+  g12_day_range2_start:
+    name: G12 day range 2 start
+    has_date: false
+    has_time: true
+  g12_day_range2_end:
+    name: G12 day range 2 end
+    has_date: false
+    has_time: true
+  g12_night_range1_start:
+    name: G12 night range 1 start
+    has_date: false
+    has_time: true
+  g12_night_range1_end:
+    name: G12 night range 1 end
+    has_date: false
+    has_time: true
+  g12_night_range2_start:
+    name: G12 night range 2 start
+    has_date: false
+    has_time: true
+  g12_night_range2_end:
+    name: G12 night range 2 end
+    has_date: false
+    has_time: true
+  g12w_summer_start_date:
+    name: G12w summer start date
+    has_date: true
+    has_time: false
+  g12w_summer_end_date:
+    name: G12w summer end date
+    has_date: true
+    has_time: false
+  g12w_summer_day_range1_start:
+    name: G12w summer day range 1 start
+    has_date: false
+    has_time: true
+  g12w_summer_day_range1_end:
+    name: G12w summer day range 1 end
+    has_date: false
+    has_time: true
+  g12w_summer_day_range2_start:
+    name: G12w summer day range 2 start
+    has_date: false
+    has_time: true
+  g12w_summer_day_range2_end:
+    name: G12w summer day range 2 end
+    has_date: false
+    has_time: true
+  g12w_summer_night_range1_start:
+    name: G12w summer night range 1 start
+    has_date: false
+    has_time: true
+  g12w_summer_night_range1_end:
+    name: G12w summer night range 1 end
+    has_date: false
+    has_time: true
+  g12w_summer_night_range2_start:
+    name: G12w summer night range 2 start
+    has_date: false
+    has_time: true
+  g12w_summer_night_range2_end:
+    name: G12w summer night range 2 end
+    has_date: false
+    has_time: true
+  g12w_winter_day_range1_start:
+    name: G12w winter day range 1 start
+    has_date: false
+    has_time: true
+  g12w_winter_day_range1_end:
+    name: G12w winter day range 1 end
+    has_date: false
+    has_time: true
+  g12w_winter_day_range2_start:
+    name: G12w winter day range 2 start
+    has_date: false
+    has_time: true
+  g12w_winter_day_range2_end:
+    name: G12w winter day range 2 end
+    has_date: false
+    has_time: true
+  g12w_winter_night_range1_start:
+    name: G12w winter night range 1 start
+    has_date: false
+    has_time: true
+  g12w_winter_night_range1_end:
+    name: G12w winter night range 1 end
+    has_date: false
+    has_time: true
+  g12w_winter_night_range2_start:
+    name: G12w winter night range 2 start
+    has_date: false
+    has_time: true
+  g12w_winter_night_range2_end:
+    name: G12w winter night range 2 end
+    has_date: false
+    has_time: true
+
+# Replace the sensor IDs below with your real entities.
+# All energy sensors should be in kWh.
+
+utility_meter:
+  energy_monthly:
+    source: sensor.energy_daily
+    cycle: monthly
+    delta_values: true
+  energy_yearly:
+    source: sensor.energy_daily
+    cycle: yearly
+    delta_values: true
+  g12_energy_daily:
+    source: sensor.energy_daily
+    cycle: daily
+    delta_values: true
+    tariffs:
+      - day
+      - night
+  g12_energy_monthly:
+    source: sensor.energy_daily
+    cycle: monthly
+    delta_values: true
+    tariffs:
+      - day
+      - night
+  g12_energy_yearly:
+    source: sensor.energy_daily
+    cycle: yearly
+    delta_values: true
+    tariffs:
+      - day
+      - night
+  g12w_energy_daily:
+    source: sensor.energy_daily
+    cycle: daily
+    delta_values: true
+    tariffs:
+      - day
+      - night
+  g12w_energy_monthly:
+    source: sensor.energy_daily
+    cycle: monthly
+    delta_values: true
+    tariffs:
+      - day
+      - night
+  g12w_energy_yearly:
+    source: sensor.energy_daily
+    cycle: yearly
+    delta_values: true
+    tariffs:
+      - day
+      - night
+
+template:
+  - binary_sensor:
+      - name: G12 Day Active
+        unique_id: g12_day_active
+        state: >-
+          {% set now_dt = now() %}
+          {% set day1_start = today_at(states('input_datetime.g12_day_range1_start')) %}
+          {% set day1_end = today_at(states('input_datetime.g12_day_range1_end')) %}
+          {% set day2_start = today_at(states('input_datetime.g12_day_range2_start')) %}
+          {% set day2_end = today_at(states('input_datetime.g12_day_range2_end')) %}
+          {% set day1 = (day1_start <= day1_end and day1_start <= now_dt < day1_end)
+            or (day1_start > day1_end and (now_dt >= day1_start or now_dt < day1_end)) %}
+          {% set day2 = (day2_start <= day2_end and day2_start <= now_dt < day2_end)
+            or (day2_start > day2_end and (now_dt >= day2_start or now_dt < day2_end)) %}
+          {{ day1 or day2 }}
+      - name: G12 Night Active
+        unique_id: g12_night_active
+        state: >-
+          {% set now_dt = now() %}
+          {% set night1_start = today_at(states('input_datetime.g12_night_range1_start')) %}
+          {% set night1_end = today_at(states('input_datetime.g12_night_range1_end')) %}
+          {% set night2_start = today_at(states('input_datetime.g12_night_range2_start')) %}
+          {% set night2_end = today_at(states('input_datetime.g12_night_range2_end')) %}
+          {% set night1 = (night1_start <= night1_end and night1_start <= now_dt < night1_end)
+            or (night1_start > night1_end and (now_dt >= night1_start or now_dt < night1_end)) %}
+          {% set night2 = (night2_start <= night2_end and night2_start <= now_dt < night2_end)
+            or (night2_start > night2_end and (now_dt >= night2_start or now_dt < night2_end)) %}
+          {{ night1 or night2 }}
+      - name: G12w Summer Active
+        unique_id: g12w_summer_active
+        state: >-
+          {% set today = now().date() %}
+          {% set summer_start = as_datetime(states('input_datetime.g12w_summer_start_date')).date() %}
+          {% set summer_end = as_datetime(states('input_datetime.g12w_summer_end_date')).date() %}
+          {% if summer_start <= summer_end %}
+            {{ summer_start <= today <= summer_end }}
+          {% else %}
+            {{ today >= summer_start or today <= summer_end }}
+          {% endif %}
+      - name: G12w Day Active
+        unique_id: g12w_day_active
+        state: >-
+          {% set now_dt = now() %}
+          {% set is_summer = is_state('binary_sensor.g12w_summer_active', 'on') %}
+          {% if is_summer %}
+            {% set day1_start = today_at(states('input_datetime.g12w_summer_day_range1_start')) %}
+            {% set day1_end = today_at(states('input_datetime.g12w_summer_day_range1_end')) %}
+            {% set day2_start = today_at(states('input_datetime.g12w_summer_day_range2_start')) %}
+            {% set day2_end = today_at(states('input_datetime.g12w_summer_day_range2_end')) %}
+          {% else %}
+            {% set day1_start = today_at(states('input_datetime.g12w_winter_day_range1_start')) %}
+            {% set day1_end = today_at(states('input_datetime.g12w_winter_day_range1_end')) %}
+            {% set day2_start = today_at(states('input_datetime.g12w_winter_day_range2_start')) %}
+            {% set day2_end = today_at(states('input_datetime.g12w_winter_day_range2_end')) %}
+          {% endif %}
+          {% set day1 = (day1_start <= day1_end and day1_start <= now_dt < day1_end)
+            or (day1_start > day1_end and (now_dt >= day1_start or now_dt < day1_end)) %}
+          {% set day2 = (day2_start <= day2_end and day2_start <= now_dt < day2_end)
+            or (day2_start > day2_end and (now_dt >= day2_start or now_dt < day2_end)) %}
+          {{ day1 or day2 }}
+      - name: G12w Night Active
+        unique_id: g12w_night_active
+        state: >-
+          {% set now_dt = now() %}
+          {% set is_summer = is_state('binary_sensor.g12w_summer_active', 'on') %}
+          {% if is_summer %}
+            {% set night1_start = today_at(states('input_datetime.g12w_summer_night_range1_start')) %}
+            {% set night1_end = today_at(states('input_datetime.g12w_summer_night_range1_end')) %}
+            {% set night2_start = today_at(states('input_datetime.g12w_summer_night_range2_start')) %}
+            {% set night2_end = today_at(states('input_datetime.g12w_summer_night_range2_end')) %}
+          {% else %}
+            {% set night1_start = today_at(states('input_datetime.g12w_winter_night_range1_start')) %}
+            {% set night1_end = today_at(states('input_datetime.g12w_winter_night_range1_end')) %}
+            {% set night2_start = today_at(states('input_datetime.g12w_winter_night_range2_start')) %}
+            {% set night2_end = today_at(states('input_datetime.g12w_winter_night_range2_end')) %}
+          {% endif %}
+          {% set night1 = (night1_start <= night1_end and night1_start <= now_dt < night1_end)
+            or (night1_start > night1_end and (now_dt >= night1_start or now_dt < night1_end)) %}
+          {% set night2 = (night2_start <= night2_end and night2_start <= now_dt < night2_end)
+            or (night2_start > night2_end and (now_dt >= night2_start or now_dt < night2_end)) %}
+          {{ night1 or night2 }}
+
+  - sensor:
+      - name: Energy Cost G11 Daily
+        unique_id: energy_cost_g11_daily
+        unit_of_measurement: PLN
+        state: >-
+          {{ (states('sensor.energy_daily') | float(0)) * (states('input_number.g11_rate') | float(0)) | round(2) }}
+      - name: Energy Cost G11 Monthly
+        unique_id: energy_cost_g11_monthly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (states('sensor.energy_monthly') | float(0)) * (states('input_number.g11_rate') | float(0)) | round(2) }}
+      - name: Energy Cost G11 Yearly
+        unique_id: energy_cost_g11_yearly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (states('sensor.energy_yearly') | float(0)) * (states('input_number.g11_rate') | float(0)) | round(2) }}
+
+      - name: Energy Cost G12 Daily
+        unique_id: energy_cost_g12_daily
+        unit_of_measurement: PLN
+        state: >-
+          {{ (
+            (states('sensor.g12_energy_daily_day') | float(0)) * (states('input_number.g12_day_rate') | float(0))
+            + (states('sensor.g12_energy_daily_night') | float(0)) * (states('input_number.g12_night_rate') | float(0))
+          ) | round(2) }}
+      - name: Energy Cost G12 Monthly
+        unique_id: energy_cost_g12_monthly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (
+            (states('sensor.g12_energy_monthly_day') | float(0)) * (states('input_number.g12_day_rate') | float(0))
+            + (states('sensor.g12_energy_monthly_night') | float(0)) * (states('input_number.g12_night_rate') | float(0))
+          ) | round(2) }}
+      - name: Energy Cost G12 Yearly
+        unique_id: energy_cost_g12_yearly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (
+            (states('sensor.g12_energy_yearly_day') | float(0)) * (states('input_number.g12_day_rate') | float(0))
+            + (states('sensor.g12_energy_yearly_night') | float(0)) * (states('input_number.g12_night_rate') | float(0))
+          ) | round(2) }}
+
+      - name: Energy Cost G12w Daily
+        unique_id: energy_cost_g12w_daily
+        unit_of_measurement: PLN
+        state: >-
+          {{ (
+            (states('sensor.g12w_energy_daily_day') | float(0)) * (states('input_number.g12w_day_rate') | float(0))
+            + (states('sensor.g12w_energy_daily_night') | float(0)) * (states('input_number.g12w_night_rate') | float(0))
+          ) | round(2) }}
+      - name: Energy Cost G12w Monthly
+        unique_id: energy_cost_g12w_monthly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (
+            (states('sensor.g12w_energy_monthly_day') | float(0)) * (states('input_number.g12w_day_rate') | float(0))
+            + (states('sensor.g12w_energy_monthly_night') | float(0)) * (states('input_number.g12w_night_rate') | float(0))
+          ) | round(2) }}
+      - name: Energy Cost G12w Yearly
+        unique_id: energy_cost_g12w_yearly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (
+            (states('sensor.g12w_energy_yearly_day') | float(0)) * (states('input_number.g12w_day_rate') | float(0))
+            + (states('sensor.g12w_energy_yearly_night') | float(0)) * (states('input_number.g12w_night_rate') | float(0))
+          ) | round(2) }}
+
+      - name: Energy Cost Dynamic Daily
+        unique_id: energy_cost_dynamic_daily
+        unit_of_measurement: PLN
+        state: >-
+          {{ (states('sensor.energy_daily') | float(0)) * (states('sensor.dynamic_rate') | float(states('input_number.dynamic_rate') | float(0))) | round(2) }}
+      - name: Energy Cost Dynamic Monthly
+        unique_id: energy_cost_dynamic_monthly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (states('sensor.energy_monthly') | float(0)) * (states('sensor.dynamic_rate') | float(states('input_number.dynamic_rate') | float(0))) | round(2) }}
+      - name: Energy Cost Dynamic Yearly
+        unique_id: energy_cost_dynamic_yearly
+        unit_of_measurement: PLN
+        state: >-
+          {{ (states('sensor.energy_yearly') | float(0)) * (states('sensor.dynamic_rate') | float(states('input_number.dynamic_rate') | float(0))) | round(2) }}
+
+automation:
+  - id: set_g12_tariff_schedule
+    alias: Set G12 tariff schedule
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+      - platform: homeassistant
+        event: start
+    action:
+      - choose:
+          - conditions: >-
+              {{ is_state('binary_sensor.g12_day_active', 'on') }}
+            sequence:
+              - service: select.select_option
+                target:
+                  entity_id:
+                    - select.g12_energy_daily_tariff
+                    - select.g12_energy_monthly_tariff
+                    - select.g12_energy_yearly_tariff
+                data:
+                  option: day
+        default:
+          - service: select.select_option
+            target:
+              entity_id:
+                - select.g12_energy_daily_tariff
+                - select.g12_energy_monthly_tariff
+                - select.g12_energy_yearly_tariff
+            data:
+              option: night
+
+  - id: set_g12w_tariff_schedule
+    alias: Set G12w tariff schedule
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+      - platform: homeassistant
+        event: start
+    action:
+      - choose:
+          - conditions: >-
+              {{ is_state('binary_sensor.g12w_day_active', 'on') }}
+            sequence:
+              - service: select.select_option
+                target:
+                  entity_id:
+                    - select.g12w_energy_daily_tariff
+                    - select.g12w_energy_monthly_tariff
+                    - select.g12w_energy_yearly_tariff
+                data:
+                  option: day
+        default:
+          - service: select.select_option
+            target:
+              entity_id:
+                - select.g12w_energy_daily_tariff
+                - select.g12w_energy_monthly_tariff
+                - select.g12w_energy_yearly_tariff
+            data:
+              option: night

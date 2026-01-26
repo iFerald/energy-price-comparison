@@ -1,0 +1,51 @@
+title: Energy Price Comparison
+views:
+  - title: Tariff Comparison
+    path: tariff-comparison
+    icon: mdi:chart-line
+    cards:
+      - type: markdown
+        title: Cost comparison (PLN)
+        content: |
+          | Period | G11 | G12 | G12w | Dynamic |
+          | --- | --- | --- | --- | --- |
+          | Day | {{ states('sensor.energy_cost_g11_daily') }} | {{ states('sensor.energy_cost_g12_daily') }} | {{ states('sensor.energy_cost_g12w_daily') }} | {{ states('sensor.energy_cost_dynamic_daily') }} |
+          | Month | {{ states('sensor.energy_cost_g11_monthly') }} | {{ states('sensor.energy_cost_g12_monthly') }} | {{ states('sensor.energy_cost_g12w_monthly') }} | {{ states('sensor.energy_cost_dynamic_monthly') }} |
+          | Year | {{ states('sensor.energy_cost_g11_yearly') }} | {{ states('sensor.energy_cost_g12_yearly') }} | {{ states('sensor.energy_cost_g12w_yearly') }} | {{ states('sensor.energy_cost_dynamic_yearly') }} |
+
+      - type: entities
+        title: Tariff rates
+        entities:
+          - input_number.g11_rate
+          - input_number.g12_day_rate
+          - input_number.g12_night_rate
+          - input_number.g12w_day_rate
+          - input_number.g12w_night_rate
+          - input_number.dynamic_rate
+
+      - type: history-graph
+        title: Daily costs (last 7 days)
+        hours_to_show: 168
+        entities:
+          - sensor.energy_cost_g11_daily
+          - sensor.energy_cost_g12_daily
+          - sensor.energy_cost_g12w_daily
+          - sensor.energy_cost_dynamic_daily
+
+      - type: history-graph
+        title: Monthly costs (last 12 months)
+        hours_to_show: 8760
+        entities:
+          - sensor.energy_cost_g11_monthly
+          - sensor.energy_cost_g12_monthly
+          - sensor.energy_cost_g12w_monthly
+          - sensor.energy_cost_dynamic_monthly
+
+      - type: history-graph
+        title: Yearly costs (last 5 years)
+        hours_to_show: 43800
+        entities:
+          - sensor.energy_cost_g11_yearly
+          - sensor.energy_cost_g12_yearly
+          - sensor.energy_cost_g12w_yearly
+          - sensor.energy_cost_dynamic_yearly
