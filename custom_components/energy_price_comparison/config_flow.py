@@ -5,11 +5,11 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 
 from .const import (
+    DOMAIN,
+    CONF_PRICE_ENTITY,
     CONF_ENERGY_ENTITY,
     CONF_G11_RATE,
-    CONF_PRICE_ENTITY,
     DEFAULT_G11_RATE,
-    DOMAIN,
 )
 
 
@@ -24,15 +24,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             schema = vol.Schema(
                 {
                     vol.Optional(CONF_NAME, default="Energy Price Comparison"): str,
-                    vol.Required(
-                        CONF_PRICE_ENTITY, default="sensor.rce_pse_price"
-                    ): str,
-                    vol.Required(
-                        CONF_ENERGY_ENTITY, default="sensor.deye_daily_energy_bought"
-                    ): str,
-                    vol.Required(
-                        CONF_G11_RATE, default=DEFAULT_G11_RATE
-                    ): vol.Coerce(float),
+                    vol.Required(CONF_PRICE_ENTITY, default="sensor.rce_pse_price"): str,
+                    vol.Required(CONF_ENERGY_ENTITY, default="sensor.deye_daily_energy_bought"): str,
+                    vol.Required(CONF_G11_RATE, default=DEFAULT_G11_RATE): vol.Coerce(float),
                 }
             )
             return self.async_show_form(step_id="user", data_schema=schema)
