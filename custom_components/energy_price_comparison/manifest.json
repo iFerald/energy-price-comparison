@@ -5,5 +5,6 @@
   "documentation": "https://github.com/iFerald/energy-price-comparison",
   "issue_tracker": "https://github.com/iFerald/energy-price-comparison/issues",
   "codeowners": ["@iFerald"],
-  "iot_class": "local_polling"
+  "iot_class": "local_polling",
+  "config_flow": true
 }
