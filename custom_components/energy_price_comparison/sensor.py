@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -9,7 +10,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import CONF_ENERGY_ENTITY, CONF_G11_RATE, CONF_PRICE_ENTITY, DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_PRICE_ENTITY,
+    CONF_ENERGY_ENTITY,
+    CONF_G11_RATE,
+)
 
 
 def _as_float(state: str | None) -> float | None:
@@ -36,14 +42,13 @@ async def async_setup_entry(
     ]
     async_add_entities(sensors)
 
+    # Auto-update when either source changes
     @callback
     def _handle_source_change(event: Any) -> None:
-        for sensor in sensors:
-            sensor.async_schedule_update_ha_state(True)
+        for s in sensors:
+            s.async_schedule_update_ha_state(True)
 
-    async_track_state_change_event(
-        hass, [price_entity, energy_entity], _handle_source_change
-    )
+    async_track_state_change_event(hass, [price_entity, energy_entity], _handle_source_change)
 
 
 class G11PricePlnPerKwhSensor(SensorEntity):
@@ -85,9 +90,7 @@ class G11CostTodaySensor(SensorEntity):
     _attr_native_unit_of_measurement = "PLN"
     _attr_icon = "mdi:cash-multiple"
 
-    def __init__(
-        self, hass: HomeAssistant, energy_entity_id: str, g11_rate_pln_per_kwh: float
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, energy_entity_id: str, g11_rate_pln_per_kwh: float) -> None:
         self.hass = hass
         self._energy = energy_entity_id
         self._rate = g11_rate_pln_per_kwh
