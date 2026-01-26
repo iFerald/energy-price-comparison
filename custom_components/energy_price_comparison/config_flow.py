@@ -1,47 +1,46 @@
 from __future__ import annotations
 
 import voluptuous as vol
-
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.const import CONF_NAME
 
-from .const import DOMAIN
+from .const import (
+    CONF_ENERGY_ENTITY,
+    CONF_G11_RATE,
+    CONF_PRICE_ENTITY,
+    DEFAULT_G11_RATE,
+    DOMAIN,
+)
 
 
-class EnergyPriceComparisonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Energy Price Comparison."""
-
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
-        """Handle the initial step."""
-        # Prevent adding multiple instances unless you want to allow it.
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
 
         if user_input is None:
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema({}),
-                description_placeholders={},
+            schema = vol.Schema(
+                {
+                    vol.Optional(CONF_NAME, default="Energy Price Comparison"): str,
+                    vol.Required(
+                        CONF_PRICE_ENTITY, default="sensor.rce_pse_price"
+                    ): str,
+                    vol.Required(
+                        CONF_ENERGY_ENTITY, default="sensor.deye_daily_energy_bought"
+                    ): str,
+                    vol.Required(
+                        CONF_G11_RATE, default=DEFAULT_G11_RATE
+                    ): vol.Coerce(float),
+                }
             )
+            return self.async_show_form(step_id="user", data_schema=schema)
 
-        # Create the config entry
-        return self.async_create_entry(title="Energy Price Comparison", data={})
-
-    @callback
-    def async_get_options_flow(self, config_entry):
-        return EnergyPriceComparisonOptionsFlowHandler(config_entry)
-
-
-class EnergyPriceComparisonOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options for Energy Price Comparison."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry):
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        if user_input is None:
-            return self.async_show_form(step_id="init", data_schema=vol.Schema({}))
-
-        return self.async_create_entry(title="", data=user_input)
+        title = user_input.get(CONF_NAME, "Energy Price Comparison")
+        data = {
+            CONF_PRICE_ENTITY: user_input[CONF_PRICE_ENTITY],
+            CONF_ENERGY_ENTITY: user_input[CONF_ENERGY_ENTITY],
+            CONF_G11_RATE: user_input[CONF_G11_RATE],
+        }
+        return self.async_create_entry(title=title, data=data)

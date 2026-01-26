@@ -1,9 +1,24 @@
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
+from typing import Any
+
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
+
+from .const import CONF_ENERGY_ENTITY, CONF_G11_RATE, CONF_PRICE_ENTITY, DOMAIN
+
+
+def _as_float(state: str | None) -> float | None:
+    if state in (None, STATE_UNKNOWN, STATE_UNAVAILABLE):
+        return None
+    try:
+        return float(state)
+    except (TypeError, ValueError):
+        return None
 
 
 async def async_setup_entry(
@@ -11,15 +26,86 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensors for a config entry."""
-    async_add_entities([EnergyPriceComparisonExampleSensor()])
+    price_entity = entry.data[CONF_PRICE_ENTITY]
+    energy_entity = entry.data[CONF_ENERGY_ENTITY]
+    g11_rate = float(entry.data[CONF_G11_RATE])
+
+    sensors: list[SensorEntity] = [
+        G11PricePlnPerKwhSensor(hass, price_entity),
+        G11CostTodaySensor(hass, energy_entity, g11_rate),
+    ]
+    async_add_entities(sensors)
+
+    @callback
+    def _handle_source_change(event: Any) -> None:
+        for sensor in sensors:
+            sensor.async_schedule_update_ha_state(True)
+
+    async_track_state_change_event(
+        hass, [price_entity, energy_entity], _handle_source_change
+    )
 
 
-class EnergyPriceComparisonExampleSensor(SensorEntity):
-    _attr_name = "Energy Price Comparison Example"
-    _attr_unique_id = "energy_price_comparison_example"
-    _attr_native_unit_of_measurement = "EUR/kWh"
+class G11PricePlnPerKwhSensor(SensorEntity):
+    """Convert PLN/MWh -> PLN/kWh from a source sensor."""
+
+    _attr_name = "G11 price (PLN/kWh)"
+    _attr_unique_id = "energy_price_comparison_g11_price_pln_per_kwh"
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, hass: HomeAssistant, source_entity_id: str) -> None:
+        self.hass = hass
+        self._source = source_entity_id
 
     @property
-    def native_value(self):
-        return 0.0
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "source_entity": self._source,
+            "source_unit_expected": "PLN/MWh",
+            "conversion": "value_pln_per_kwh = value_pln_per_mwh / 1000",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        st = self.hass.states.get(self._source)
+        if not st:
+            return None
+        raw = _as_float(st.state)
+        if raw is None:
+            return None
+        return raw / 1000.0
+
+
+class G11CostTodaySensor(SensorEntity):
+    """Compute today's cost using a fixed G11 rate and a daily energy bought sensor."""
+
+    _attr_name = "Cost today (G11)"
+    _attr_unique_id = "energy_price_comparison_cost_today_g11"
+    _attr_native_unit_of_measurement = "PLN"
+    _attr_icon = "mdi:cash-multiple"
+
+    def __init__(
+        self, hass: HomeAssistant, energy_entity_id: str, g11_rate_pln_per_kwh: float
+    ) -> None:
+        self.hass = hass
+        self._energy = energy_entity_id
+        self._rate = g11_rate_pln_per_kwh
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "energy_entity": self._energy,
+            "rate_pln_per_kwh": self._rate,
+            "formula": "cost = rate_pln_per_kwh * energy_kwh",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        st = self.hass.states.get(self._energy)
+        if not st:
+            return None
+        energy_kwh = _as_float(st.state)
+        if energy_kwh is None:
+            return None
+        return round(self._rate * energy_kwh, 4)
