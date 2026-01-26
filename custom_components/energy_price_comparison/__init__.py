@@ -5,21 +5,16 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up via YAML (not used, but keeps HA happy)."""
-    return True
+PLATFORMS: list[str] = ["sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up from a config entry."""
-    # Forward entry setup to platforms (add "sensor" when you have sensor entities)
+    """Set up Energy Price Comparison from a config entry."""
     hass.data.setdefault(DOMAIN, {})
-    # Example: await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    # Example: return await hass.config_entries.async_unload_platforms(entry, ["sensor"])
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
