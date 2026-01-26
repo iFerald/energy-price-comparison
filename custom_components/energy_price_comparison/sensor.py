@@ -15,6 +15,24 @@ from .const import (
     CONF_PRICE_ENTITY,
     CONF_ENERGY_ENTITY,
     CONF_G11_RATE,
+
+    CONF_G12_DAY_RATE,
+    CONF_G12_NIGHT_RATE,
+    CONF_G12_DAY_RANGE_1_START,
+    CONF_G12_DAY_RANGE_2_SUMMER_START,
+    CONF_G12_DAY_RANGE_2_WINTER_START,
+    CONF_G12_NIGHT_RANGE_1_SUMMER_START,
+    CONF_G12_NIGHT_RANGE_1_WINTER_START,
+    CONF_G12_NIGHT_RANGE_2_START,
+
+    DEFAULT_G12_DAY_RATE,
+    DEFAULT_G12_NIGHT_RATE,
+    DEFAULT_G12_DAY_RANGE_1_START,
+    DEFAULT_G12_DAY_RANGE_2_SUMMER_START,
+    DEFAULT_G12_DAY_RANGE_2_WINTER_START,
+    DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START,
+    DEFAULT_G12_NIGHT_RANGE_1_WINTER_START,
+    DEFAULT_G12_NIGHT_RANGE_2_START,
 )
 
 
@@ -32,13 +50,57 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    price_entity = entry.data[CONF_PRICE_ENTITY]
-    energy_entity = entry.data[CONF_ENERGY_ENTITY]
-    g11_rate = float(entry.data[CONF_G11_RATE])
+    price_entity = entry.options.get(CONF_PRICE_ENTITY, entry.data.get(CONF_PRICE_ENTITY))
+    energy_entity = entry.options.get(CONF_ENERGY_ENTITY, entry.data.get(CONF_ENERGY_ENTITY))
+    g11_rate = float(entry.options.get(CONF_G11_RATE, entry.data.get(CONF_G11_RATE)))
+    
+    g12_day_rate = float(entry.options.get(CONF_G12_DAY_RATE, entry.data.get(CONF_G12_DAY_RATE, DEFAULT_G12_DAY_RATE)))
+    g12_night_rate = float(entry.options.get(CONF_G12_NIGHT_RATE, entry.data.get(CONF_G12_NIGHT_RATE, DEFAULT_G12_NIGHT_RATE)))
+    
+    g12_day_range_1_start = entry.options.get(
+        CONF_G12_DAY_RANGE_1_START,
+        entry.data.get(CONF_G12_DAY_RANGE_1_START, DEFAULT_G12_DAY_RANGE_1_START),
+    )
+    g12_day_range_2_summer_start = entry.options.get(
+        CONF_G12_DAY_RANGE_2_SUMMER_START,
+        entry.data.get(CONF_G12_DAY_RANGE_2_SUMMER_START, DEFAULT_G12_DAY_RANGE_2_SUMMER_START),
+    )
+    g12_day_range_2_winter_start = entry.options.get(
+        CONF_G12_DAY_RANGE_2_WINTER_START,
+        entry.data.get(CONF_G12_DAY_RANGE_2_WINTER_START, DEFAULT_G12_DAY_RANGE_2_WINTER_START),
+    )
+    
+    g12_night_range_1_summer_start = entry.options.get(
+        CONF_G12_NIGHT_RANGE_1_SUMMER_START,
+        entry.data.get(CONF_G12_NIGHT_RANGE_1_SUMMER_START, DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START),
+    )
+    g12_night_range_1_winter_start = entry.options.get(
+        CONF_G12_NIGHT_RANGE_1_WINTER_START,
+        entry.data.get(CONF_G12_NIGHT_RANGE_1_WINTER_START, DEFAULT_G12_NIGHT_RANGE_1_WINTER_START),
+    )
+    g12_night_range_2_start = entry.options.get(
+        CONF_G12_NIGHT_RANGE_2_START,
+        entry.data.get(CONF_G12_NIGHT_RANGE_2_START, DEFAULT_G12_NIGHT_RANGE_2_START),
+    )
+    
 
     sensors: list[SensorEntity] = [
         G11PricePlnPerKwhSensor(hass, price_entity),
-        G11CostTodaySensor(hass, energy_entity, g11_rate),
+        G11CostTodaySensor(
+            hass,
+            energy_entity,
+            g11_rate,
+            g12_day_rate=g12_day_rate,
+            g12_night_rate=g12_night_rate,
+            g12_ranges={
+                "day_range_1_start": g12_day_range_1_start,
+                "day_range_2_summer_start": g12_day_range_2_summer_start,
+                "day_range_2_winter_start": g12_day_range_2_winter_start,
+                "night_range_1_summer_start": g12_night_range_1_summer_start,
+                "night_range_1_winter_start": g12_night_range_1_winter_start,
+                "night_range_2_start": g12_night_range_2_start,
+            },
+        ),
     ]
     async_add_entities(sensors)
 
@@ -54,8 +116,8 @@ async def async_setup_entry(
 class G11PricePlnPerKwhSensor(SensorEntity):
     """Convert PLN/MWh -> PLN/kWh from a source sensor."""
 
-    _attr_name = "G11 price (PLN/kWh)"
-    _attr_unique_id = "energy_price_comparison_g11_price_pln_per_kwh"
+    _attr_name = "Current RCE price (PLN/kWh)"
+    _attr_unique_id = "current_rce_price_pln_kwh"
     _attr_native_unit_of_measurement = "PLN/kWh"
     _attr_icon = "mdi:cash"
 
@@ -85,15 +147,27 @@ class G11PricePlnPerKwhSensor(SensorEntity):
 class G11CostTodaySensor(SensorEntity):
     """Compute today's cost using a fixed G11 rate and a daily energy bought sensor."""
 
-    _attr_name = "Cost today (G11)"
-    _attr_unique_id = "energy_price_comparison_cost_today_g11"
+    _attr_name = "G11 - Net Cost Today"
+    _attr_unique_id = "energy_price_comparison_g11_net_cost_today"
     _attr_native_unit_of_measurement = "PLN"
     _attr_icon = "mdi:cash-multiple"
 
-    def __init__(self, hass: HomeAssistant, energy_entity_id: str, g11_rate_pln_per_kwh: float) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        energy_entity_id: str,
+        g11_rate_pln_per_kwh: float,
+        *,
+        g12_day_rate: float,
+        g12_night_rate: float,
+        g12_ranges: dict[str, str],
+    ) -> None:
         self.hass = hass
         self._energy = energy_entity_id
         self._rate = g11_rate_pln_per_kwh
+        self._g12_day_rate = g12_day_rate
+        self._g12_night_rate = g12_night_rate
+        self._g12_ranges = g12_ranges
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -101,6 +175,11 @@ class G11CostTodaySensor(SensorEntity):
             "energy_entity": self._energy,
             "rate_pln_per_kwh": self._rate,
             "formula": "cost = rate_pln_per_kwh * energy_kwh",
+
+            # G12 settings (loaded from Options)
+            "g12_day_rate_pln_per_kwh": self._g12_day_rate,
+            "g12_night_rate_pln_per_kwh": self._g12_night_rate,
+            "g12_time_ranges": self._g12_ranges,
         }
 
     @property
