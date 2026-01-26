@@ -11,9 +11,6 @@
         }
       }
     }
-    "abort": {
-      "already_configured": "Energy Price Comparison is already set up. Use the Configure button (⚙️) on the integration to change settings."
-    }
   },
   "options": {
     "step": {
