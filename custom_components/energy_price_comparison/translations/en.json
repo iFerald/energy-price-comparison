@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Energy Price Comparison",
+        "description": "Configure energy price and consumption sources.",
+        "data": {
+          "price_entity": "Current RCE Price",
+          "energy_entity": "Daily Energy Bought Sensor",
+          "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Energy Price Comparison – Options",
+        "description": "Adjust sensors and tariff rate.",
+        "data": {
+          "price_entity": "Current RCE Price",
+          "energy_entity": "Daily Energy Bought Sensor",
+          "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)"
+        }
+      }
+    }
+  }
+}
