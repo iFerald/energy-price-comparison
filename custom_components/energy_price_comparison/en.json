@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Energy Price Comparison",
+        "description": "Set up the integration.",
+        "data": {}
+      }
+    },
+    "abort": {
+      "already_configured": "Already configured."
+    }
+  }
+}
