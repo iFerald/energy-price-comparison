@@ -3,24 +3,43 @@
     "step": {
       "user": {
         "title": "Energy Price Comparison",
-        "description": "Configure energy price and consumption sources.",
+        "description": "Select the source entities and provide tariffs settings.",
         "data": {
-          "price_entity": "Current RCE Price",
-          "energy_entity": "Daily Energy Bought Sensor",
-          "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)"
+          "price_entity": "Current RCE Price Sensor (PLN/MWh)",
+          "energy_entity": "Daily Energy Bought Sensor (kWh)",
+          "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)",
+          "g12_day_rate_pln_per_kwh": "G12 Day Rate (PLN/kWh)",
+          "g12_night_rate_pln_per_kwh": "G12 Night Rate (PLN/kWh)",
+          "g12_day_range_1_start": "G12 Day Range 1 Start",
+          "g12_day_range_2_summer_start": "G12 Day Range 2 Summer Start",
+          "g12_day_range_2_winter_start": "G12 Day Range 2 Winter Start",
+          "g12_night_range_1_summer_start": "G12 Night Range 1 Summer Start",
+          "g12_night_range_1_winter_start": "G12 Night Range 1 Winter Start",
+          "g12_night_range_2_start": "G12 Night Range 2 Start"
         }
       }
+    },
+    "abort": {
+      "already_configured": "Energy Price Comparison is already set up. Use the configure button (⚙️) to change configuration."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Energy Price Comparison – Options",
-        "description": "Adjust sensors and tariff rate.",
+        "title": "Energy Price Comparison",
+        "description": "Select the source entitie and provide tariffs settings.",
         "data": {
-          "price_entity": "Current RCE Price",
-          "energy_entity": "Daily Energy Bought Sensor",
-          "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)"
+          "price_entity": "Current RCE Price Sensor (PLN/MWh) ",
+          "energy_entity": "Daily Energy Bought Sensor (kWh)",
+          "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)",
+          "g12_day_rate_pln_per_kwh": "G12 Day Rate (PLN/kWh)",
+          "g12_night_rate_pln_per_kwh": "G12 Night Rate (PLN/kWh)",
+          "g12_day_range_1_start": "G12 Day Range 1 Start",
+          "g12_day_range_2_summer_start": "G12 Day Range 2 Summer Start",
+          "g12_day_range_2_winter_start": "G12 Day Range 2 Winter Start",
+          "g12_night_range_1_summer_start": "G12 Night Range 1 Summer Start",
+          "g12_night_range_1_winter_start": "G12 Night Range 1 Winter Start",
+          "g12_night_range_2_start": "G12 Night Range 2 Start"
         }
       }
     }
