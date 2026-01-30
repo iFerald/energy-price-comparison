@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -15,7 +14,6 @@ from .const import (
     CONF_PRICE_ENTITY,
     CONF_ENERGY_ENTITY,
     CONF_G11_RATE,
-
     CONF_G12_DAY_RATE,
     CONF_G12_NIGHT_RATE,
     CONF_G12_DAY_RANGE_1_START,
@@ -24,7 +22,6 @@ from .const import (
     CONF_G12_NIGHT_RANGE_1_SUMMER_START,
     CONF_G12_NIGHT_RANGE_1_WINTER_START,
     CONF_G12_NIGHT_RANGE_2_START,
-
     DEFAULT_G12_DAY_RATE,
     DEFAULT_G12_NIGHT_RATE,
     DEFAULT_G12_DAY_RANGE_1_START,
@@ -45,6 +42,80 @@ def _as_float(state: str | None) -> float | None:
         return None
 
 
+def _get_entry_value(entry: ConfigEntry, key: str, default: Any) -> Any:
+    """Read from entry.options -> entry.data -> default."""
+    if entry.options and key in entry.options:
+        return entry.options[key]
+    if entry.data and key in entry.data:
+        return entry.data[key]
+    return default
+
+
+class _EntryBackedSensor(SensorEntity):
+    """Small base class for sensors backed by ConfigEntry options/data."""
+
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry, *, unique_suffix: str, name: str) -> None:
+        self._entry = entry
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
+
+    def _read(self, key: str, default: Any) -> Any:
+        return _get_entry_value(self._entry, key, default)
+
+
+class G12DayRateConfigSensor(_EntryBackedSensor):
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12_day_rate", name="G12 day rate (PLN/kWh)")
+
+    @property
+    def native_value(self) -> float:
+        return float(self._read(CONF_G12_DAY_RATE, DEFAULT_G12_DAY_RATE))
+
+
+class G12NightRateConfigSensor(_EntryBackedSensor):
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12_night_rate", name="G12 night rate (PLN/kWh)")
+
+    @property
+    def native_value(self) -> float:
+        return float(self._read(CONF_G12_NIGHT_RATE, DEFAULT_G12_NIGHT_RATE))
+
+
+class G12ScheduleSummarySensor(_EntryBackedSensor):
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12_schedule_summary", name="G12 schedule summary")
+
+    @property
+    def native_value(self) -> str:
+        day1 = self._read(CONF_G12_DAY_RANGE_1_START, DEFAULT_G12_DAY_RANGE_1_START)
+
+        day2_s = self._read(CONF_G12_DAY_RANGE_2_SUMMER_START, DEFAULT_G12_DAY_RANGE_2_SUMMER_START)
+        day2_w = self._read(CONF_G12_DAY_RANGE_2_WINTER_START, DEFAULT_G12_DAY_RANGE_2_WINTER_START)
+
+        night1_s = self._read(CONF_G12_NIGHT_RANGE_1_SUMMER_START, DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START)
+        night1_w = self._read(CONF_G12_NIGHT_RANGE_1_WINTER_START, DEFAULT_G12_NIGHT_RANGE_1_WINTER_START)
+
+        night2 = self._read(CONF_G12_NIGHT_RANGE_2_START, DEFAULT_G12_NIGHT_RANGE_2_START)
+
+        # Readable dashboard string (pure exposure, no calc)
+        return (
+            f"Summer: Day {day1}–{night1_s}, {day2_s}–{night2}; "
+            f"Night {night1_s}–{day2_s}, {night2}–{day1}. "
+            f"Winter: Day {day1}–{night1_w}, {day2_w}–{night2}; "
+            f"Night {night1_w}–{day2_w}, {night2}–{day1}."
+        )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -53,38 +124,21 @@ async def async_setup_entry(
     price_entity = entry.options.get(CONF_PRICE_ENTITY, entry.data.get(CONF_PRICE_ENTITY))
     energy_entity = entry.options.get(CONF_ENERGY_ENTITY, entry.data.get(CONF_ENERGY_ENTITY))
     g11_rate = float(entry.options.get(CONF_G11_RATE, entry.data.get(CONF_G11_RATE)))
-    
-    g12_day_rate = float(entry.options.get(CONF_G12_DAY_RATE, entry.data.get(CONF_G12_DAY_RATE, DEFAULT_G12_DAY_RATE)))
-    g12_night_rate = float(entry.options.get(CONF_G12_NIGHT_RATE, entry.data.get(CONF_G12_NIGHT_RATE, DEFAULT_G12_NIGHT_RATE)))
-    
-    g12_day_range_1_start = entry.options.get(
-        CONF_G12_DAY_RANGE_1_START,
-        entry.data.get(CONF_G12_DAY_RANGE_1_START, DEFAULT_G12_DAY_RANGE_1_START),
-    )
-    g12_day_range_2_summer_start = entry.options.get(
-        CONF_G12_DAY_RANGE_2_SUMMER_START,
-        entry.data.get(CONF_G12_DAY_RANGE_2_SUMMER_START, DEFAULT_G12_DAY_RANGE_2_SUMMER_START),
-    )
-    g12_day_range_2_winter_start = entry.options.get(
-        CONF_G12_DAY_RANGE_2_WINTER_START,
-        entry.data.get(CONF_G12_DAY_RANGE_2_WINTER_START, DEFAULT_G12_DAY_RANGE_2_WINTER_START),
-    )
-    
-    g12_night_range_1_summer_start = entry.options.get(
-        CONF_G12_NIGHT_RANGE_1_SUMMER_START,
-        entry.data.get(CONF_G12_NIGHT_RANGE_1_SUMMER_START, DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START),
-    )
-    g12_night_range_1_winter_start = entry.options.get(
-        CONF_G12_NIGHT_RANGE_1_WINTER_START,
-        entry.data.get(CONF_G12_NIGHT_RANGE_1_WINTER_START, DEFAULT_G12_NIGHT_RANGE_1_WINTER_START),
-    )
-    g12_night_range_2_start = entry.options.get(
-        CONF_G12_NIGHT_RANGE_2_START,
-        entry.data.get(CONF_G12_NIGHT_RANGE_2_START, DEFAULT_G12_NIGHT_RANGE_2_START),
-    )
-    
+
+    # Keep these for your existing G11CostTodaySensor attributes:
+    g12_day_rate = float(_get_entry_value(entry, CONF_G12_DAY_RATE, DEFAULT_G12_DAY_RATE))
+    g12_night_rate = float(_get_entry_value(entry, CONF_G12_NIGHT_RATE, DEFAULT_G12_NIGHT_RATE))
+
+    g12_day_range_1_start = _get_entry_value(entry, CONF_G12_DAY_RANGE_1_START, DEFAULT_G12_DAY_RANGE_1_START)
+    g12_day_range_2_summer_start = _get_entry_value(entry, CONF_G12_DAY_RANGE_2_SUMMER_START, DEFAULT_G12_DAY_RANGE_2_SUMMER_START)
+    g12_day_range_2_winter_start = _get_entry_value(entry, CONF_G12_DAY_RANGE_2_WINTER_START, DEFAULT_G12_DAY_RANGE_2_WINTER_START)
+
+    g12_night_range_1_summer_start = _get_entry_value(entry, CONF_G12_NIGHT_RANGE_1_SUMMER_START, DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START)
+    g12_night_range_1_winter_start = _get_entry_value(entry, CONF_G12_NIGHT_RANGE_1_WINTER_START, DEFAULT_G12_NIGHT_RANGE_1_WINTER_START)
+    g12_night_range_2_start = _get_entry_value(entry, CONF_G12_NIGHT_RANGE_2_START, DEFAULT_G12_NIGHT_RANGE_2_START)
 
     sensors: list[SensorEntity] = [
+        # existing sensors
         G11PricePlnPerKwhSensor(hass, price_entity),
         G11CostTodaySensor(
             hass,
@@ -101,10 +155,16 @@ async def async_setup_entry(
                 "night_range_2_start": g12_night_range_2_start,
             },
         ),
+
+        # NEW: pure config exposure entities
+        G12DayRateConfigSensor(entry),
+        G12NightRateConfigSensor(entry),
+        G12ScheduleSummarySensor(entry),
     ]
+
     async_add_entities(sensors)
 
-    # Auto-update when either source changes
+    # Auto-update when either source changes (your existing behavior)
     @callback
     def _handle_source_change(event: Any) -> None:
         for s in sensors:
@@ -175,8 +235,6 @@ class G11CostTodaySensor(SensorEntity):
             "energy_entity": self._energy,
             "rate_pln_per_kwh": self._rate,
             "formula": "cost = rate_pln_per_kwh * energy_kwh",
-
-            # G12 settings (loaded from Options)
             "g12_day_rate_pln_per_kwh": self._g12_day_rate,
             "g12_night_rate_pln_per_kwh": self._g12_night_rate,
             "g12_time_ranges": self._g12_ranges,
