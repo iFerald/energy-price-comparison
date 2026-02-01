@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -36,6 +36,15 @@ from .const import (
     DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START,
     DEFAULT_G12_NIGHT_RANGE_1_WINTER_START,
     DEFAULT_G12_NIGHT_RANGE_2_START,
+    # NEW:
+    CONF_G12W_DAY_RATE,
+    CONF_G12W_NIGHT_RATE,
+    DEFAULT_G12W_DAY_RATE,
+    DEFAULT_G12W_NIGHT_RATE,
+    CONF_G12N_DAY_RATE,
+    CONF_G12N_NIGHT_RATE,
+    DEFAULT_G12N_DAY_RATE,
+    DEFAULT_G12N_NIGHT_RATE,
 )
 
 
@@ -62,8 +71,9 @@ def _is_summer(local_dt: datetime) -> bool:
     return bool(dst and dst != timedelta(0))
 
 
-def _is_day_tariff(local_dt: datetime, cfg: dict[str, str]) -> bool:
+def _is_day_tariff_g12(local_dt: datetime, cfg: dict[str, str]) -> bool:
     """
+    Config-driven G12 (existing behavior).
     cfg keys:
       day_range_1_start
       day_range_2_summer_start / day_range_2_winter_start
@@ -79,6 +89,41 @@ def _is_day_tariff(local_dt: datetime, cfg: dict[str, str]) -> bool:
 
     hm = local_dt.strftime("%H:%M")
     return (day1 <= hm < night1) or (day2 <= hm < night2)
+
+
+def _is_day_tariff_g12w(local_dt: datetime) -> bool:
+    """
+    G12w:
+      - Weekend (Sat/Sun): ALWAYS night
+      - Mon-Fri:
+          Winter day: 06:00–13:00 and 15:00–22:00
+          Summer day: 06:00–15:00 and 17:00–22:00
+    """
+    wd = local_dt.weekday()  # Mon=0..Sun=6
+    if wd >= 5:
+        return False  # weekend => night
+
+    hm = local_dt.strftime("%H:%M")
+    summer = _is_summer(local_dt)
+    if summer:
+        return ("06:00" <= hm < "15:00") or ("17:00" <= hm < "22:00")
+    return ("06:00" <= hm < "13:00") or ("15:00" <= hm < "22:00")
+
+
+def _is_day_tariff_g12n(local_dt: datetime) -> bool:
+    """
+    G12n:
+      - Sunday: ALWAYS night
+      - Mon-Sat:
+          Day: 05:00–01:00 (wrap)
+          Night: 01:00–05:00
+    """
+    wd = local_dt.weekday()
+    if wd == 6:
+        return False  # Sunday => night
+
+    hm = local_dt.strftime("%H:%M")
+    return (hm >= "05:00") or (hm < "01:00")
 
 
 def _period_range_local(now_local: datetime, period: str) -> tuple[datetime, datetime]:
@@ -118,6 +163,7 @@ async def _fetch_history_states(
     if hass is None:
         return []
     """Return (utc_timestamp, float_value) from recorder state history."""
+
     def _job():
         return get_significant_states(
             hass=hass,
@@ -158,6 +204,7 @@ async def _fetch_lts_hourly_totals(
     Return (end_ts_utc, total_kwh) using hourly long-term statistics.
     We treat each returned row as an hour bucket; we use its 'start' + 1h as end timestamp.
     """
+
     def _job():
         return statistics_during_period(
             hass=hass,
@@ -166,7 +213,7 @@ async def _fetch_lts_hourly_totals(
             statistic_ids={statistic_id},
             period="hour",
             types={"sum", "state"},
-            units=None,
+            units=None,  # IMPORTANT for your HA version
         )
 
     stats = await get_instance(hass).async_add_executor_job(_job)
@@ -193,19 +240,11 @@ async def _fetch_lts_hourly_totals(
     return out
 
 
-def _delta_kwh_from_points(points: list[tuple[datetime, float]]) -> tuple[float | None, float | None, float | None]:
-    """Return (baseline, now, delta) from monotonic total points."""
-    if len(points) < 2:
-        return None, None, None
-    baseline = points[0][1]
-    now = points[-1][1]
-    delta = now - baseline
-    if delta < 0:
-        return baseline, now, None
-    return baseline, now, delta
-
-
-def _sum_deltas_g12(points: list[tuple[datetime, float]], g12_cfg: dict[str, str], tz) -> tuple[float, float]:
+def _sum_deltas_bucketed(
+    points: list[tuple[datetime, float]],
+    tz,
+    is_day_fn: Callable[[datetime], bool],
+) -> tuple[float, float]:
     """Bucket monotonic deltas into day/night by local end timestamp."""
     if len(points) < 2:
         return 0.0, 0.0
@@ -218,7 +257,7 @@ def _sum_deltas_g12(points: list[tuple[datetime, float]], g12_cfg: dict[str, str
         d = v - prev_v
         if d >= 0:
             local_end = dt_util.as_local(ts_utc).astimezone(tz)
-            if _is_day_tariff(local_end, g12_cfg):
+            if is_day_fn(local_end):
                 day += d
             else:
                 night += d
@@ -263,6 +302,54 @@ class G12NightRateConfigSensor(_EntryBackedSensor):
         return float(self._read(CONF_G12_NIGHT_RATE, DEFAULT_G12_NIGHT_RATE))
 
 
+class G12wDayRateConfigSensor(_EntryBackedSensor):
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12w_day_rate", name="G12w day rate (PLN/kWh)")
+
+    @property
+    def native_value(self) -> float:
+        return float(self._read(CONF_G12W_DAY_RATE, DEFAULT_G12W_DAY_RATE))
+
+
+class G12wNightRateConfigSensor(_EntryBackedSensor):
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12w_night_rate", name="G12w night rate (PLN/kWh)")
+
+    @property
+    def native_value(self) -> float:
+        return float(self._read(CONF_G12W_NIGHT_RATE, DEFAULT_G12W_NIGHT_RATE))
+
+
+class G12nDayRateConfigSensor(_EntryBackedSensor):
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12n_day_rate", name="G12n day rate (PLN/kWh)")
+
+    @property
+    def native_value(self) -> float:
+        return float(self._read(CONF_G12N_DAY_RATE, DEFAULT_G12N_DAY_RATE))
+
+
+class G12nNightRateConfigSensor(_EntryBackedSensor):
+    _attr_native_unit_of_measurement = "PLN/kWh"
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, unique_suffix="g12n_night_rate", name="G12n night rate (PLN/kWh)")
+
+    @property
+    def native_value(self) -> float:
+        return float(self._read(CONF_G12N_NIGHT_RATE, DEFAULT_G12N_NIGHT_RATE))
+
+
 class G12ScheduleSummarySensor(_EntryBackedSensor):
     _attr_icon = "mdi:calendar-clock"
 
@@ -286,6 +373,40 @@ class G12ScheduleSummarySensor(_EntryBackedSensor):
             f"Night {night1_s}–{day2_s}, {night2}–{day1}. "
             f"Winter: Day {day1}–{night1_w}, {day2_w}–{night2}; "
             f"Night {night1_w}–{day2_w}, {night2}–{day1}."
+        )
+
+
+class G12wScheduleSummarySensor(SensorEntity):
+    _attr_icon = "mdi:calendar-clock"
+    _attr_should_poll = False
+
+    def __init__(self, entry_id: str) -> None:
+        self._attr_name = "G12w schedule summary"
+        self._attr_unique_id = f"{entry_id}_g12w_schedule_summary"
+
+    @property
+    def native_value(self) -> str:
+        return (
+            "Winter (Mon–Fri): Day 06:00–13:00, 15:00–22:00; Night 13:00–15:00, 22:00–06:00; "
+            "Sat/Sun: Night 00:00–24:00. "
+            "Summer (Mon–Fri): Day 06:00–15:00, 17:00–22:00; Night 15:00–17:00, 22:00–06:00; "
+            "Sat/Sun: Night 00:00–24:00."
+        )
+
+
+class G12nScheduleSummarySensor(SensorEntity):
+    _attr_icon = "mdi:calendar-clock"
+    _attr_should_poll = False
+
+    def __init__(self, entry_id: str) -> None:
+        self._attr_name = "G12n schedule summary"
+        self._attr_unique_id = f"{entry_id}_g12n_schedule_summary"
+
+    @property
+    def native_value(self) -> str:
+        return (
+            "Mon–Sat: Day 05:00–01:00; Night 01:00–05:00. "
+            "Sunday: Night 00:00–24:00."
         )
 
 
@@ -409,14 +530,27 @@ class G11CostTodayFromTotalSensor(SensorEntity):
         elif live_now is None:
             now_source = "recorder_last_point"
 
-        baseline, now, delta = _delta_kwh_from_points(points)
-        if baseline is None or now is None or delta is None:
+        if len(points) < 2:
             self._value = None
             self._attrs = {
                 "total_energy_entity": self._total,
                 "rate_pln_per_kwh": self._rate,
                 "start_local": start_local.isoformat(),
-                "reason": "not_enough_points_or_negative_delta",
+                "reason": "not_enough_points",
+                "points": len(points),
+            }
+            return
+
+        baseline = points[0][1]
+        now = points[-1][1]
+        delta = now - baseline
+        if delta < 0:
+            self._value = None
+            self._attrs = {
+                "total_energy_entity": self._total,
+                "rate_pln_per_kwh": self._rate,
+                "start_local": start_local.isoformat(),
+                "reason": "negative_delta",
                 "points": len(points),
             }
             return
@@ -437,9 +571,7 @@ class G11CostTodayFromTotalSensor(SensorEntity):
         }
 
 
-class G12CostTodayFromTotalSensor(SensorEntity):
-    """Primary G12 today: bucket deltas into day/night using local time + DST season."""
-    _attr_name = "G12 - Net Cost Today"
+class _TariffCostTodayFromTotalSensor(SensorEntity):
     _attr_native_unit_of_measurement = "PLN"
     _attr_icon = "mdi:cash-clock"
     _attr_should_poll = False
@@ -447,18 +579,27 @@ class G12CostTodayFromTotalSensor(SensorEntity):
     def __init__(
         self,
         hass: HomeAssistant,
+        *,
         entry_id: str,
         total_entity_id: str,
-        g12_day_rate: float,
-        g12_night_rate: float,
-        g12_cfg: dict[str, str],
+        name: str,
+        unique_suffix: str,
+        day_rate: float,
+        night_rate: float,
+        time_ranges_attr: dict[str, Any],
+        season_rule: str,
+        is_day_fn: Callable[[datetime], bool],
     ) -> None:
         self.hass = hass
         self._total = total_entity_id
-        self._day_rate = g12_day_rate
-        self._night_rate = g12_night_rate
-        self._cfg = g12_cfg
-        self._attr_unique_id = f"{entry_id}_g12_net_cost_today"
+        self._day_rate = day_rate
+        self._night_rate = night_rate
+        self._time_ranges_attr = time_ranges_attr
+        self._season_rule = season_rule
+        self._is_day_fn = is_day_fn
+
+        self._attr_name = name
+        self._attr_unique_id = f"{entry_id}_{unique_suffix}"
 
         self._value: float | None = None
         self._attrs: dict[str, Any] = {}
@@ -479,7 +620,6 @@ class G12CostTodayFromTotalSensor(SensorEntity):
         start_utc = dt_util.as_utc(start_local)
         end_utc = dt_util.as_utc(now_local)
 
-        # prefer recorder history; fallback to hourly LTS if needed
         resolution = "history"
         points = await _fetch_history_states(self.hass, self._total, start_utc, end_utc)
         if len(points) < 2:
@@ -504,7 +644,7 @@ class G12CostTodayFromTotalSensor(SensorEntity):
             if live_now is not None:
                 points = points[:-1] + [(end_utc, live_now)]
 
-        day_kwh, night_kwh = _sum_deltas_g12(points, self._cfg, tz)
+        day_kwh, night_kwh = _sum_deltas_bucketed(points, tz, self._is_day_fn)
         cost = day_kwh * self._day_rate + night_kwh * self._night_rate
 
         self._value = round(cost, 4)
@@ -516,11 +656,222 @@ class G12CostTodayFromTotalSensor(SensorEntity):
             "night_kwh": round(night_kwh, 4),
             "g12_day_rate_pln_per_kwh": self._day_rate,
             "g12_night_rate_pln_per_kwh": self._night_rate,
-            "g12_time_ranges": self._cfg,
+            "g12_time_ranges": self._time_ranges_attr,
             "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
-            "season_rule": "summer if DST else winter",
+            "season_rule": self._season_rule,
             "points": len(points),
         }
+
+
+class _TariffPeriodCostFromTotalSensor(SensorEntity):
+    _attr_native_unit_of_measurement = "PLN"
+    _attr_icon = "mdi:cash-clock"
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        entry_id: str,
+        total_entity_id: str,
+        day_rate: float,
+        night_rate: float,
+        time_ranges_attr: dict[str, Any],
+        season_rule: str,
+        is_day_fn: Callable[[datetime], bool],
+        period: str,
+        name: str,
+        unique_suffix: str,
+    ) -> None:
+        self.hass = hass
+        self._total = total_entity_id
+        self._day_rate = day_rate
+        self._night_rate = night_rate
+        self._time_ranges_attr = time_ranges_attr
+        self._season_rule = season_rule
+        self._is_day_fn = is_day_fn
+        self._period = period
+
+        self._attr_name = name
+        self._attr_unique_id = f"{entry_id}_{unique_suffix}"
+
+        self._value: float | None = None
+        self._attrs: dict[str, Any] = {}
+
+    @property
+    def native_value(self) -> float | None:
+        return self._value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attrs
+
+    async def async_update(self) -> None:
+        now_local = dt_util.now()
+        tz = dt_util.DEFAULT_TIME_ZONE
+
+        start_local, end_local = _period_range_local(now_local, self._period)
+        start_utc = dt_util.as_utc(start_local)
+        end_utc = dt_util.as_utc(end_local)
+
+        resolution = "history"
+        points = await _fetch_history_states(self.hass, self._total, start_utc, end_utc)
+        if len(points) < 2:
+            resolution = "long_term_statistics"
+            points = await _fetch_lts_hourly_totals(self.hass, self._total, start_utc, end_utc)
+
+        if len(points) < 2:
+            self._value = None
+            self._attrs = {
+                "total_energy_entity": self._total,
+                "period": self._period,
+                "start_local": start_local.isoformat(),
+                "end_local": end_local.isoformat(),
+                "resolution": resolution,
+                "reason": "not_enough_points",
+                "points": len(points),
+                "day_kwh": 0.0,
+                "night_kwh": 0.0,
+                "g12_day_rate_pln_per_kwh": self._day_rate,
+                "g12_night_rate_pln_per_kwh": self._night_rate,
+                "g12_time_ranges": self._time_ranges_attr,
+                "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
+                "season_rule": self._season_rule,
+                "week_start": "monday" if self._period == "week" else None,
+            }
+            return
+
+        day_kwh, night_kwh = _sum_deltas_bucketed(points, tz, self._is_day_fn)
+        cost = day_kwh * self._day_rate + night_kwh * self._night_rate
+
+        self._value = round(cost, 4)
+        self._attrs = {
+            "total_energy_entity": self._total,
+            "period": self._period,
+            "start_local": start_local.isoformat(),
+            "end_local": end_local.isoformat(),
+            "resolution": resolution,
+            "day_kwh": round(day_kwh, 4),
+            "night_kwh": round(night_kwh, 4),
+            "g12_day_rate_pln_per_kwh": self._day_rate,
+            "g12_night_rate_pln_per_kwh": self._night_rate,
+            "g12_time_ranges": self._time_ranges_attr,
+            "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
+            "season_rule": self._season_rule,
+            "points": len(points),
+            "week_start": "monday" if self._period == "week" else None,
+        }
+
+
+class G12CostTodayFromTotalSensor(_TariffCostTodayFromTotalSensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry_id: str,
+        total_entity_id: str,
+        g12_day_rate: float,
+        g12_night_rate: float,
+        g12_cfg: dict[str, str],
+    ) -> None:
+        super().__init__(
+            hass,
+            entry_id=entry_id,
+            total_entity_id=total_entity_id,
+            name="G12 - Net Cost Today",
+            unique_suffix="g12_net_cost_today",
+            day_rate=g12_day_rate,
+            night_rate=g12_night_rate,
+            time_ranges_attr=g12_cfg,
+            season_rule="summer if DST else winter",
+            is_day_fn=lambda dt: _is_day_tariff_g12(dt, g12_cfg),
+        )
+
+
+class G12PeriodCostFromTotalSensor(_TariffPeriodCostFromTotalSensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        entry_id: str,
+        total_entity_id: str,
+        g12_day_rate: float,
+        g12_night_rate: float,
+        g12_cfg: dict[str, str],
+        period: str,
+        name: str,
+        unique_suffix: str,
+    ) -> None:
+        super().__init__(
+            hass,
+            entry_id=entry_id,
+            total_entity_id=total_entity_id,
+            day_rate=g12_day_rate,
+            night_rate=g12_night_rate,
+            time_ranges_attr=g12_cfg,
+            season_rule="summer if DST else winter",
+            is_day_fn=lambda dt: _is_day_tariff_g12(dt, g12_cfg),
+            period=period,
+            name=name,
+            unique_suffix=unique_suffix,
+        )
+
+
+class G12wCostTodayFromTotalSensor(_TariffCostTodayFromTotalSensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry_id: str,
+        total_entity_id: str,
+        day_rate: float,
+        night_rate: float,
+    ) -> None:
+        cfg = {
+            "winter_weekdays_day": "06:00–13:00, 15:00–22:00",
+            "winter_weekdays_night": "13:00–15:00, 22:00–06:00",
+            "summer_weekdays_day": "06:00–15:00, 17:00–22:00",
+            "summer_weekdays_night": "15:00–17:00, 22:00–06:00",
+            "weekend": "night 00:00–24:00",
+        }
+        super().__init__(
+            hass,
+            entry_id=entry_id,
+            total_entity_id=total_entity_id,
+            name="G12w - Net Cost Today",
+            unique_suffix="g12w_net_cost_today",
+            day_rate=day_rate,
+            night_rate=night_rate,
+            time_ranges_attr=cfg,
+            season_rule="summer if DST else winter",
+            is_day_fn=_is_day_tariff_g12w,
+        )
+
+
+class G12nCostTodayFromTotalSensor(_TariffCostTodayFromTotalSensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry_id: str,
+        total_entity_id: str,
+        day_rate: float,
+        night_rate: float,
+    ) -> None:
+        cfg = {
+            "mon_sat_day": "05:00–01:00",
+            "mon_sat_night": "01:00–05:00",
+            "sunday": "night 00:00–24:00",
+        }
+        super().__init__(
+            hass,
+            entry_id=entry_id,
+            total_entity_id=total_entity_id,
+            name="G12n - Net Cost Today",
+            unique_suffix="g12n_net_cost_today",
+            day_rate=day_rate,
+            night_rate=night_rate,
+            time_ranges_attr=cfg,
+            season_rule="fixed (weekday rules; no DST)",
+            is_day_fn=_is_day_tariff_g12n,
+        )
 
 
 class G11PeriodCostFromTotalSensor(SensorEntity):
@@ -586,8 +937,10 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
             }
             return
 
-        baseline, now, delta = _delta_kwh_from_points(points)
-        if baseline is None or now is None or delta is None:
+        baseline = points[0][1]
+        now = points[-1][1]
+        delta = now - baseline
+        if delta < 0:
             self._value = None
             self._attrs = {
                 "total_energy_entity": self._total,
@@ -596,7 +949,7 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
                 "start_local": start_local.isoformat(),
                 "end_local": end_local.isoformat(),
                 "resolution": resolution,
-                "reason": "negative_delta_or_bad_points",
+                "reason": "negative_delta",
                 "points": len(points),
             }
             return
@@ -619,103 +972,6 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
         }
 
 
-class G12PeriodCostFromTotalSensor(SensorEntity):
-    """Week/Month/Year/Last Year: bucket deltas into day/night * rates, history preferred, LTS fallback."""
-    _attr_native_unit_of_measurement = "PLN"
-    _attr_icon = "mdi:cash-clock"
-    _attr_should_poll = False
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        *,
-        entry_id: str,
-        total_entity_id: str,
-        g12_day_rate_pln_per_kwh: float,
-        g12_night_rate_pln_per_kwh: float,
-        g12_cfg: dict[str, str],
-        period: str,
-        name: str,
-        unique_suffix: str,
-    ) -> None:
-        self.hass = hass
-        self._total = total_entity_id
-        self._day_rate = g12_day_rate_pln_per_kwh
-        self._night_rate = g12_night_rate_pln_per_kwh
-        self._cfg = g12_cfg
-        self._period = period
-        self._attr_name = name
-        self._attr_unique_id = f"{entry_id}_{unique_suffix}"
-
-        self._value: float | None = None
-        self._attrs: dict[str, Any] = {}
-
-    @property
-    def native_value(self) -> float | None:
-        return self._value
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return self._attrs
-
-    async def async_update(self) -> None:
-        now_local = dt_util.now()
-        tz = dt_util.DEFAULT_TIME_ZONE
-
-        start_local, end_local = _period_range_local(now_local, self._period)
-        start_utc = dt_util.as_utc(start_local)
-        end_utc = dt_util.as_utc(end_local)
-
-        resolution = "history"
-        points = await _fetch_history_states(self.hass, self._total, start_utc, end_utc)
-
-        if len(points) < 2:
-            resolution = "long_term_statistics"
-            points = await _fetch_lts_hourly_totals(self.hass, self._total, start_utc, end_utc)
-
-        if len(points) < 2:
-            self._value = None
-            self._attrs = {
-                "total_energy_entity": self._total,
-                "period": self._period,
-                "start_local": start_local.isoformat(),
-                "end_local": end_local.isoformat(),
-                "resolution": resolution,
-                "reason": "not_enough_points",
-                "points": len(points),
-                "day_kwh": 0.0,
-                "night_kwh": 0.0,
-                "g12_day_rate_pln_per_kwh": self._day_rate,
-                "g12_night_rate_pln_per_kwh": self._night_rate,
-                "g12_time_ranges": self._cfg,
-                "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
-                "season_rule": "summer if DST else winter",
-                "week_start": "monday" if self._period == "week" else None,
-            }
-            return
-
-        day_kwh, night_kwh = _sum_deltas_g12(points, self._cfg, tz)
-        cost = day_kwh * self._day_rate + night_kwh * self._night_rate
-
-        self._value = round(cost, 4)
-        self._attrs = {
-            "total_energy_entity": self._total,
-            "period": self._period,
-            "start_local": start_local.isoformat(),
-            "end_local": end_local.isoformat(),
-            "resolution": resolution,
-            "day_kwh": round(day_kwh, 4),
-            "night_kwh": round(night_kwh, 4),
-            "g12_day_rate_pln_per_kwh": self._day_rate,
-            "g12_night_rate_pln_per_kwh": self._night_rate,
-            "g12_time_ranges": self._cfg,
-            "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
-            "season_rule": "summer if DST else winter",
-            "points": len(points),
-            "week_start": "monday" if self._period == "week" else None,
-        }
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -727,6 +983,12 @@ async def async_setup_entry(
 
     g12_day_rate = float(_get_entry_value(entry, CONF_G12_DAY_RATE, DEFAULT_G12_DAY_RATE))
     g12_night_rate = float(_get_entry_value(entry, CONF_G12_NIGHT_RATE, DEFAULT_G12_NIGHT_RATE))
+
+    g12w_day_rate = float(_get_entry_value(entry, CONF_G12W_DAY_RATE, DEFAULT_G12W_DAY_RATE))
+    g12w_night_rate = float(_get_entry_value(entry, CONF_G12W_NIGHT_RATE, DEFAULT_G12W_NIGHT_RATE))
+
+    g12n_day_rate = float(_get_entry_value(entry, CONF_G12N_DAY_RATE, DEFAULT_G12N_DAY_RATE))
+    g12n_night_rate = float(_get_entry_value(entry, CONF_G12N_NIGHT_RATE, DEFAULT_G12N_NIGHT_RATE))
 
     g12_cfg = {
         "day_range_1_start": _get_entry_value(entry, CONF_G12_DAY_RANGE_1_START, DEFAULT_G12_DAY_RANGE_1_START),
@@ -759,6 +1021,23 @@ async def async_setup_entry(
         g12_cfg,
     )
 
+    g12w_today = G12wCostTodayFromTotalSensor(
+        hass,
+        entry.entry_id,
+        total_energy_entity,
+        g12w_day_rate,
+        g12w_night_rate,
+    )
+
+    g12n_today = G12nCostTodayFromTotalSensor(
+        hass,
+        entry.entry_id,
+        total_energy_entity,
+        g12n_day_rate,
+        g12n_night_rate,
+    )
+
+    # G11 period sensors
     g11_week = G11PeriodCostFromTotalSensor(
         hass,
         entry_id=entry.entry_id,
@@ -796,13 +1075,13 @@ async def async_setup_entry(
         unique_suffix="g11_net_cost_last_year",
     )
 
-    # ✅ NEW: G12 period sensors (week/month/year/last_year)
+    # G12 period sensors (restored)
     g12_week = G12PeriodCostFromTotalSensor(
         hass,
         entry_id=entry.entry_id,
         total_entity_id=total_energy_entity,
-        g12_day_rate_pln_per_kwh=g12_day_rate,
-        g12_night_rate_pln_per_kwh=g12_night_rate,
+        g12_day_rate=g12_day_rate,
+        g12_night_rate=g12_night_rate,
         g12_cfg=g12_cfg,
         period="week",
         name="G12 - Net Cost This Week",
@@ -812,8 +1091,8 @@ async def async_setup_entry(
         hass,
         entry_id=entry.entry_id,
         total_entity_id=total_energy_entity,
-        g12_day_rate_pln_per_kwh=g12_day_rate,
-        g12_night_rate_pln_per_kwh=g12_night_rate,
+        g12_day_rate=g12_day_rate,
+        g12_night_rate=g12_night_rate,
         g12_cfg=g12_cfg,
         period="month",
         name="G12 - Net Cost This Month",
@@ -823,8 +1102,8 @@ async def async_setup_entry(
         hass,
         entry_id=entry.entry_id,
         total_entity_id=total_energy_entity,
-        g12_day_rate_pln_per_kwh=g12_day_rate,
-        g12_night_rate_pln_per_kwh=g12_night_rate,
+        g12_day_rate=g12_day_rate,
+        g12_night_rate=g12_night_rate,
         g12_cfg=g12_cfg,
         period="year",
         name="G12 - Net Cost This Year",
@@ -834,12 +1113,132 @@ async def async_setup_entry(
         hass,
         entry_id=entry.entry_id,
         total_entity_id=total_energy_entity,
-        g12_day_rate_pln_per_kwh=g12_day_rate,
-        g12_night_rate_pln_per_kwh=g12_night_rate,
+        g12_day_rate=g12_day_rate,
+        g12_night_rate=g12_night_rate,
         g12_cfg=g12_cfg,
         period="last_year",
         name="G12 - Net Cost Last Year",
         unique_suffix="g12_net_cost_last_year",
+    )
+
+    # G12w / G12n period sensors
+    g12w_cfg = {
+        "winter_weekdays_day": "06:00–13:00, 15:00–22:00",
+        "winter_weekdays_night": "13:00–15:00, 22:00–06:00",
+        "summer_weekdays_day": "06:00–15:00, 17:00–22:00",
+        "summer_weekdays_night": "15:00–17:00, 22:00–06:00",
+        "weekend": "night 00:00–24:00",
+    }
+    g12n_cfg = {
+        "mon_sat_day": "05:00–01:00",
+        "mon_sat_night": "01:00–05:00",
+        "sunday": "night 00:00–24:00",
+    }
+
+    g12w_week = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12w_day_rate,
+        night_rate=g12w_night_rate,
+        time_ranges_attr=g12w_cfg,
+        season_rule="summer if DST else winter",
+        is_day_fn=_is_day_tariff_g12w,
+        period="week",
+        name="G12w - Net Cost This Week",
+        unique_suffix="g12w_net_cost_this_week",
+    )
+    g12w_month = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12w_day_rate,
+        night_rate=g12w_night_rate,
+        time_ranges_attr=g12w_cfg,
+        season_rule="summer if DST else winter",
+        is_day_fn=_is_day_tariff_g12w,
+        period="month",
+        name="G12w - Net Cost This Month",
+        unique_suffix="g12w_net_cost_this_month",
+    )
+    g12w_year = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12w_day_rate,
+        night_rate=g12w_night_rate,
+        time_ranges_attr=g12w_cfg,
+        season_rule="summer if DST else winter",
+        is_day_fn=_is_day_tariff_g12w,
+        period="year",
+        name="G12w - Net Cost This Year",
+        unique_suffix="g12w_net_cost_this_year",
+    )
+    g12w_last_year = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12w_day_rate,
+        night_rate=g12w_night_rate,
+        time_ranges_attr=g12w_cfg,
+        season_rule="summer if DST else winter",
+        is_day_fn=_is_day_tariff_g12w,
+        period="last_year",
+        name="G12w - Net Cost Last Year",
+        unique_suffix="g12w_net_cost_last_year",
+    )
+
+    g12n_week = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12n_day_rate,
+        night_rate=g12n_night_rate,
+        time_ranges_attr=g12n_cfg,
+        season_rule="fixed (weekday rules; no DST)",
+        is_day_fn=_is_day_tariff_g12n,
+        period="week",
+        name="G12n - Net Cost This Week",
+        unique_suffix="g12n_net_cost_this_week",
+    )
+    g12n_month = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12n_day_rate,
+        night_rate=g12n_night_rate,
+        time_ranges_attr=g12n_cfg,
+        season_rule="fixed (weekday rules; no DST)",
+        is_day_fn=_is_day_tariff_g12n,
+        period="month",
+        name="G12n - Net Cost This Month",
+        unique_suffix="g12n_net_cost_this_month",
+    )
+    g12n_year = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12n_day_rate,
+        night_rate=g12n_night_rate,
+        time_ranges_attr=g12n_cfg,
+        season_rule="fixed (weekday rules; no DST)",
+        is_day_fn=_is_day_tariff_g12n,
+        period="year",
+        name="G12n - Net Cost This Year",
+        unique_suffix="g12n_net_cost_this_year",
+    )
+    g12n_last_year = _TariffPeriodCostFromTotalSensor(
+        hass,
+        entry_id=entry.entry_id,
+        total_entity_id=total_energy_entity,
+        day_rate=g12n_day_rate,
+        night_rate=g12n_night_rate,
+        time_ranges_attr=g12n_cfg,
+        season_rule="fixed (weekday rules; no DST)",
+        is_day_fn=_is_day_tariff_g12n,
+        period="last_year",
+        name="G12n - Net Cost Last Year",
+        unique_suffix="g12n_net_cost_last_year",
     )
 
     sensors: list[SensorEntity] = [
@@ -847,17 +1246,38 @@ async def async_setup_entry(
         g11_today_baseline,
         g11_today,
         g12_today,
+        g12w_today,
+        g12n_today,
+
         g11_week,
         g11_month,
         g11_year,
         g11_last_year,
+
         g12_week,
         g12_month,
         g12_year,
         g12_last_year,
+
+        g12w_week,
+        g12w_month,
+        g12w_year,
+        g12w_last_year,
+
+        g12n_week,
+        g12n_month,
+        g12n_year,
+        g12n_last_year,
+
         G12DayRateConfigSensor(entry),
         G12NightRateConfigSensor(entry),
+        G12wDayRateConfigSensor(entry),
+        G12wNightRateConfigSensor(entry),
+        G12nDayRateConfigSensor(entry),
+        G12nNightRateConfigSensor(entry),
         G12ScheduleSummarySensor(entry),
+        G12wScheduleSummarySensor(entry.entry_id),
+        G12nScheduleSummarySensor(entry.entry_id),
     ]
 
     async_add_entities(sensors, update_before_add=True)
@@ -871,7 +1291,8 @@ async def async_setup_entry(
             if s.hass is None:
                 continue
 
-            if isinstance(s, (G11CostTodayFromTotalSensor, G12CostTodayFromTotalSensor)):
+            # "Today" sensors follow total sensor changes
+            if isinstance(s, (G11CostTodayFromTotalSensor, _TariffCostTodayFromTotalSensor)):
                 if entity_id == total_energy_entity:
                     hass.async_create_task(s.async_update_ha_state(True))
                 continue
@@ -896,7 +1317,7 @@ async def async_setup_entry(
 
     # Safety refresh for "today" sensors (2 min)
     async def _tick_today(_now: datetime) -> None:
-        for s in (g11_today, g12_today):
+        for s in (g11_today, g12_today, g12w_today, g12n_today):
             if s.hass is None:
                 continue
             hass.async_create_task(s.async_update_ha_state(True))
@@ -908,6 +1329,8 @@ async def async_setup_entry(
         for s in (
             g11_week, g11_month, g11_year, g11_last_year,
             g12_week, g12_month, g12_year, g12_last_year,
+            g12w_week, g12w_month, g12w_year, g12w_last_year,
+            g12n_week, g12n_month, g12n_year, g12n_last_year,
         ):
             if s.hass is None:
                 continue
