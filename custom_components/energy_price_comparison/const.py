@@ -8,7 +8,7 @@ DEFAULT_ENERGY_ENTITY = "sensor.deye_daily_energy_bought"
 
 # G11 config keys
 CONF_G11_RATE = "g11_rate_pln_per_kwh"
-DEFAULT_G11_RATE = 0.5050
+DEFAULT_G11_RATE = 0.4982
 
 
 # G12 config keys
