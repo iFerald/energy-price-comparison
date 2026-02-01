@@ -15,7 +15,12 @@
           "g12_day_range_2_winter_start": "G12 Day Range 2 Winter Start",
           "g12_night_range_1_summer_start": "G12 Night Range 1 Summer Start",
           "g12_night_range_1_winter_start": "G12 Night Range 1 Winter Start",
-          "g12_night_range_2_start": "G12 Night Range 2 Start"
+          "g12_night_range_2_start": "G12 Night Range 2 Start",
+
+          "g12w_day_rate_pln_per_kwh": "G12w Day Rate (PLN/kWh)",
+          "g12w_night_rate_pln_per_kwh": "G12w Night Rate (PLN/kWh)",
+          "g12n_day_rate_pln_per_kwh": "G12n Day Rate (PLN/kWh)",
+          "g12n_night_rate_pln_per_kwh": "G12n Night Rate (PLN/kWh)"
         }
       }
     },
@@ -39,7 +44,12 @@
           "g12_day_range_2_winter_start": "G12 Day Range 2 Winter Start",
           "g12_night_range_1_summer_start": "G12 Night Range 1 Summer Start",
           "g12_night_range_1_winter_start": "G12 Night Range 1 Winter Start",
-          "g12_night_range_2_start": "G12 Night Range 2 Start"
+          "g12_night_range_2_start": "G12 Night Range 2 Start",
+
+          "g12w_day_rate_pln_per_kwh": "G12w Day Rate (PLN/kWh)",
+          "g12w_night_rate_pln_per_kwh": "G12w Night Rate (PLN/kWh)",
+          "g12n_day_rate_pln_per_kwh": "G12n Day Rate (PLN/kWh)",
+          "g12n_night_rate_pln_per_kwh": "G12n Night Rate (PLN/kWh)"
         }
       }
     }
