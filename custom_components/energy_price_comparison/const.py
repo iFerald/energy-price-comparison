@@ -10,7 +10,6 @@ DEFAULT_ENERGY_ENTITY = "sensor.deye_daily_energy_bought"
 CONF_G11_RATE = "g11_rate_pln_per_kwh"
 DEFAULT_G11_RATE = 0.4982
 
-
 # G12 config keys
 CONF_G12_DAY_RATE = "g12_day_rate_pln_per_kwh"
 CONF_G12_NIGHT_RATE = "g12_night_rate_pln_per_kwh"
@@ -34,3 +33,15 @@ DEFAULT_G12_DAY_RANGE_2_WINTER_START = "15:00"
 DEFAULT_G12_NIGHT_RANGE_1_SUMMER_START = "15:00"
 DEFAULT_G12_NIGHT_RANGE_1_WINTER_START = "13:00"
 DEFAULT_G12_NIGHT_RANGE_2_START = "22:00"
+
+# --- NEW: G12w config keys + defaults ---
+CONF_G12W_DAY_RATE = "g12w_day_rate_pln_per_kwh"
+CONF_G12W_NIGHT_RATE = "g12w_night_rate_pln_per_kwh"
+DEFAULT_G12W_DAY_RATE = 0.5821
+DEFAULT_G12W_NIGHT_RATE = 0.4235
+
+# --- NEW: G12n config keys + defaults ---
+CONF_G12N_DAY_RATE = "g12n_day_rate_pln_per_kwh"
+CONF_G12N_NIGHT_RATE = "g12n_night_rate_pln_per_kwh"
+DEFAULT_G12N_DAY_RATE = 0.5511
+DEFAULT_G12N_NIGHT_RATE = 0.3912
