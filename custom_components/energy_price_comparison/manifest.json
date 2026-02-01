@@ -1,7 +1,7 @@
 {
   "domain": "energy_price_comparison",
   "name": "Energy Price Comparison",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "documentation": "https://github.com/iFerald/energy-price-comparison",
   "issue_tracker": "https://github.com/iFerald/energy-price-comparison/issues",
   "codeowners": ["@iFerald"],
