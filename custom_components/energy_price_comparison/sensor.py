@@ -399,7 +399,7 @@ class G11CostTodayFromTotalSensor(SensorEntity):
             self._value = None
             self._attrs = {
                 "total_energy_entity": self._total,
-                "rate_pln_per_kwh": self._rate,
+                "rate_pln_per_kwh": _fmt_rate(self._rate),
                 "start_local": start_local.isoformat(),
                 "reason": "not_enough_points",
                 "points": len(points),
@@ -413,7 +413,7 @@ class G11CostTodayFromTotalSensor(SensorEntity):
             self._value = None
             self._attrs = {
                 "total_energy_entity": self._total,
-                "rate_pln_per_kwh": self._rate,
+                "rate_pln_per_kwh": _fmt_rate(self._rate),
                 "start_local": start_local.isoformat(),
                 "reason": "negative_delta",
                 "points": len(points),
@@ -423,7 +423,7 @@ class G11CostTodayFromTotalSensor(SensorEntity):
         self._value = round(delta * self._rate, 4)
         self._attrs = {
             "total_energy_entity": self._total,
-            "rate_pln_per_kwh": self._rate,
+            "rate_pln_per_kwh": _fmt_rate(self._rate),
             "formula": "cost_today = (total_now - total_at_midnight) * rate",
             "start_local": start_local.isoformat(),
             "baseline_total_kwh": round(baseline, 4),
@@ -516,8 +516,8 @@ class _TariffCostTodayFromTotalSensor(SensorEntity):
             "resolution": resolution,
             "day_kwh": round(day_kwh, 4),
             "night_kwh": round(night_kwh, 4),
-            "day_rate_pln_per_kwh": self._day_rate,
-            "night_rate_pln_per_kwh": self._night_rate,
+            "day_rate_pln_per_kwh": _fmt_rate(self._day_rate),
+            "night_rate_pln_per_kwh": _fmt_rate(self._night_rate),
             "time_ranges": self._ranges_attr,
             "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
             "season_rule": self._season_rule,
@@ -606,8 +606,8 @@ class _TariffPeriodCostFromTotalSensor(SensorEntity):
             "resolution": resolution,
             "day_kwh": round(day_kwh, 4),
             "night_kwh": round(night_kwh, 4),
-            "day_rate_pln_per_kwh": self._day_rate,
-            "night_rate_pln_per_kwh": self._night_rate,
+            "day_rate_pln_per_kwh": _fmt_rate(self._day_rate),
+            "night_rate_pln_per_kwh": _fmt_rate(self._night_rate),
             "time_ranges": self._ranges_attr,
             "formula": "cost = day_kwh*day_rate + night_kwh*night_rate",
             "season_rule": self._season_rule,
@@ -668,7 +668,7 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
             self._attrs = {
                 "total_energy_entity": self._total,
                 "period": self._period,
-                "rate_pln_per_kwh": self._rate,
+                "rate_pln_per_kwh": _fmt_rate(self._rate),
                 "start_local": start_local.isoformat(),
                 "end_local": end_local.isoformat(),
                 "resolution": resolution,
@@ -685,7 +685,7 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
             self._attrs = {
                 "total_energy_entity": self._total,
                 "period": self._period,
-                "rate_pln_per_kwh": self._rate,
+                "rate_pln_per_kwh": _fmt_rate(self._rate),
                 "start_local": start_local.isoformat(),
                 "end_local": end_local.isoformat(),
                 "resolution": resolution,
@@ -698,7 +698,7 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
         self._attrs = {
             "total_energy_entity": self._total,
             "period": self._period,
-            "rate_pln_per_kwh": self._rate,
+            "rate_pln_per_kwh": _fmt_rate(self._rate),
             "formula": "cost_period = (total_end - total_start) * rate",
             "start_local": start_local.isoformat(),
             "end_local": end_local.isoformat(),
