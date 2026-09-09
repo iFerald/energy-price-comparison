@@ -65,6 +65,9 @@ from .const import (
     DEFAULT_G12N_DAY_START,
     DEFAULT_G12N_NIGHT_START,
 )
+from .pse_rce_api import RCEApiClient, business_date_for_local_dt
+from .rce_overlap import compute_cost_overlap
+
 
 
 def _as_float(state: str | None) -> float | None:
@@ -72,6 +75,15 @@ def _as_float(state: str | None) -> float | None:
         return None
     try:
         return float(state)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_rate(v: float | None) -> float | None:
+    if v is None:
+        return None
+    try:
+        return round(float(v), 6)
     except (TypeError, ValueError):
         return None
 
@@ -710,6 +722,152 @@ class G11PeriodCostFromTotalSensor(SensorEntity):
             "week_start": "monday" if self._period == "week" else None,
         }
 
+class RCEApiCostFromTotalSensor(SensorEntity):
+    """Variable-price cost sensor using PSE API (15-min bins) + overlap allocation.
+
+    Partial coverage: if API has no prices before a certain start date, we compute from the first
+    available priced moment within the requested period and expose coverage attributes.
+    """
+
+    _attr_native_unit_of_measurement = "PLN"
+    _attr_icon = "mdi:cash-multiple"
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        entry_id: str,
+        client: RCEApiClient,
+        total_entity_id: str,
+        period: str,
+        name: str,
+        unique_suffix: str,
+    ) -> None:
+        self.hass = hass
+        self._client = client
+        self._total = total_entity_id
+        self._period = period
+        self._attr_name = name
+        self._attr_unique_id = f"{entry_id}_{unique_suffix}"
+        self._value: float | None = None
+        self._attrs: dict[str, Any] = {}
+
+    @property
+    def native_value(self) -> float | None:
+        return self._value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attrs
+
+    async def async_update(self) -> None:
+        now_local = dt_util.now()
+
+        if self._period == "today":
+            period_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_end_local = now_local
+        else:
+            period_start_local, period_end_local = _period_range_local(now_local, self._period)
+
+        period_start_utc = dt_util.as_utc(period_start_local)
+        period_end_utc = dt_util.as_utc(period_end_local)
+
+        # Energy points (monotonic total)
+        resolution_energy = "history"
+        energy_points = await _fetch_history_states(self.hass, self._total, period_start_utc, period_end_utc)
+        if len(energy_points) < 2:
+            resolution_energy = "long_term_statistics"
+            energy_points = await _fetch_lts_hourly_totals(self.hass, self._total, period_start_utc, period_end_utc)
+
+        if len(energy_points) < 2:
+            self._value = None
+            self._attrs = {
+                "total_energy_entity": self._total,
+                "period": self._period,
+                "resolution_energy": resolution_energy,
+                "reason": "not_enough_energy_points",
+                "period_start_local": period_start_local.isoformat(),
+                "period_end_local": period_end_local.isoformat(),
+            }
+            return
+
+        # Build the set of business dates we need (local dates), then fetch bins per day from API/cache.
+        # Partial coverage emerges naturally if days are missing (0 bins).
+        day = business_date_for_local_dt(period_start_local)
+        last_day = business_date_for_local_dt(period_end_local)
+
+        all_bins: list[Any] = []
+        missing_days: list[str] = []
+        first_priced_start_utc: datetime | None = None
+        last_priced_end_utc: datetime | None = None
+
+        cur = day
+        while cur <= last_day:
+            bins = await self._client.get_day_bins(cur)
+            if not bins:
+                missing_days.append(cur.isoformat())
+            else:
+                all_bins.extend(bins)
+                if first_priced_start_utc is None:
+                    first_priced_start_utc = bins[0].start_utc
+                last_priced_end_utc = bins[-1].end_utc
+            cur = cur + timedelta(days=1)
+
+        if not all_bins:
+            self._value = None
+            self._attrs = {
+                "total_energy_entity": self._total,
+                "period": self._period,
+                "resolution_energy": resolution_energy,
+                "reason": "no_price_bins",
+                "missing_days": missing_days,
+                "period_start_local": period_start_local.isoformat(),
+                "period_end_local": period_end_local.isoformat(),
+            }
+            return
+
+        # Effective coverage start is max(requested start, first priced start)
+        eff_start_utc = period_start_utc
+        if first_priced_start_utc is not None and first_priced_start_utc > eff_start_utc:
+            eff_start_utc = first_priced_start_utc
+
+        eff_end_utc = period_end_utc
+        if last_priced_end_utc is not None and last_priced_end_utc < eff_end_utc:
+            eff_end_utc = last_priced_end_utc
+
+        # Compute overlap-weighted cost in the effective window
+        kwh, cost, missing_intervals = compute_cost_overlap(
+            energy_points,
+            all_bins,
+            start_utc=eff_start_utc,
+            end_utc=eff_end_utc,
+        )
+
+        # If we have zero kWh in coverage, return 0.0 cost but keep coverage attrs.
+        period_seconds = max(0.0, (period_end_utc - period_start_utc).total_seconds())
+        cov_seconds = max(0.0, (eff_end_utc - eff_start_utc).total_seconds())
+        cov_ratio = (cov_seconds / period_seconds) if period_seconds > 0 else 0.0
+
+        self._value = round(cost, 4)
+        self._attrs = {
+            "total_energy_entity": self._total,
+            "period": self._period,
+            "resolution_energy": resolution_energy,
+            "price_source": "pse_api_rce-pln",
+            "granularity": "15min",
+            "formula": "cost = Σ max(0,ΔkWh) * price_pln_per_kwh using overlap allocation over 15-min bins",
+            "period_start_local": period_start_local.isoformat(),
+            "period_end_local": period_end_local.isoformat(),
+            "coverage_start_local": dt_util.as_local(eff_start_utc).isoformat(),
+            "coverage_end_local": dt_util.as_local(eff_end_utc).isoformat(),
+            "coverage_ratio_time": round(cov_ratio, 6),
+            "missing_days": missing_days,
+            "missing_energy_intervals_no_price": missing_intervals,
+            "kwh": round(kwh, 4),
+        }
+
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -718,6 +876,7 @@ async def async_setup_entry(
 ) -> None:
     price_entity = _get_entry_value(entry, CONF_PRICE_ENTITY, None)
     total_energy_entity = _get_entry_value(entry, CONF_TOTAL_ENERGY_ENTITY, DEFAULT_TOTAL_ENERGY_ENTITY)
+    rce_client = RCEApiClient(hass)
 
     g11_rate = float(_get_entry_value(entry, CONF_G11_RATE, DEFAULT_G11_RATE))
 
@@ -790,6 +949,18 @@ async def async_setup_entry(
         is_day_fn=lambda dt: _is_day_tariff_g12n(dt, g12n_cfg),
     )
 
+    # RCE (PSE API) variable-price sensors
+    rce_today = RCEApiCostFromTotalSensor(
+    hass,
+    entry_id=entry.entry_id,
+    client=rce_client,
+    total_entity_id=total_energy_entity,
+    period="today",
+    name="RCE (PSE API) - Net Cost Today",
+    unique_suffix="rce_api_net_cost_today",
+    )
+
+
     # G11 periods
     g11_week = G11PeriodCostFromTotalSensor(
         hass,
@@ -827,6 +998,44 @@ async def async_setup_entry(
         name="G11 - Net Cost Last Year",
         unique_suffix="g11_net_cost_last_year",
     )
+
+    rce_week = RCEApiCostFromTotalSensor(
+    hass,
+    entry_id=entry.entry_id,
+    client=rce_client,
+    total_entity_id=total_energy_entity,
+    period="week",
+    name="RCE (PSE API) - Net Cost This Week",
+    unique_suffix="rce_api_net_cost_this_week",
+    )
+    rce_month = RCEApiCostFromTotalSensor(
+    hass,
+    entry_id=entry.entry_id,
+    client=rce_client,
+    total_entity_id=total_energy_entity,
+    period="month",
+    name="RCE (PSE API) - Net Cost This Month",
+    unique_suffix="rce_api_net_cost_this_month",
+    )
+    rce_year = RCEApiCostFromTotalSensor(
+    hass,
+    entry_id=entry.entry_id,
+    client=rce_client,
+    total_entity_id=total_energy_entity,
+    period="year",
+    name="RCE (PSE API) - Net Cost This Year",
+    unique_suffix="rce_api_net_cost_this_year",
+    )
+    rce_last_year = RCEApiCostFromTotalSensor(
+    hass,
+    entry_id=entry.entry_id,
+    client=rce_client,
+    total_entity_id=total_energy_entity,
+    period="last_year",
+    name="RCE (PSE API) - Net Cost Last Year",
+    unique_suffix="rce_api_net_cost_last_year",
+    )
+
 
     def _mk_periods(prefix: str, day_rate: float, night_rate: float, cfg: dict[str, Any], season_rule: str, is_day_fn: Callable[[datetime], bool]):
         return (
@@ -916,6 +1125,7 @@ async def async_setup_entry(
         g12_today,
         g12w_today,
         g12n_today,
+        rce_today, rce_week, rce_month, rce_year, rce_last_year,
         g11_week, g11_month, g11_year, g11_last_year,
         g12_week, g12_month, g12_year, g12_last_year,
         g12w_week, g12w_month, g12w_year, g12w_last_year,
@@ -942,7 +1152,7 @@ async def async_setup_entry(
             if s.hass is None:
                 continue
 
-            if isinstance(s, (G11CostTodayFromTotalSensor, _TariffCostTodayFromTotalSensor)) and entity_id == total_energy_entity:
+            if isinstance(s, (G11CostTodayFromTotalSensor, _TariffCostTodayFromTotalSensor, RCEApiCostFromTotalSensor)) and entity_id == total_energy_entity:
                 hass.async_create_task(s.async_update_ha_state(True))
                 continue
 
@@ -953,7 +1163,7 @@ async def async_setup_entry(
     async_track_state_change_event(hass, [price_entity, total_energy_entity], _handle_source_change)
 
     async def _tick_today(_now: datetime) -> None:
-        for s in (g11_today, g12_today, g12w_today, g12n_today):
+        for s in (g11_today, g12_today, g12w_today, g12n_today, rce_today):
             if s.hass is None:
                 continue
             hass.async_create_task(s.async_update_ha_state(True))
@@ -963,6 +1173,7 @@ async def async_setup_entry(
     async def _tick_periods(_now: datetime) -> None:
         for s in (
             g11_week, g11_month, g11_year, g11_last_year,
+            rce_week, rce_month, rce_year, rce_last_year,
             g12_week, g12_month, g12_year, g12_last_year,
             g12w_week, g12w_month, g12w_year, g12w_last_year,
             g12n_week, g12n_month, g12n_year, g12n_last_year,
