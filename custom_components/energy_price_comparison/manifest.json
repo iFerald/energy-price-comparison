@@ -1,12 +1,15 @@
 {
   "domain": "energy_price_comparison",
   "name": "Energy Price Comparison",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "documentation": "https://github.com/iFerald/energy-price-comparison",
   "issue_tracker": "https://github.com/iFerald/energy-price-comparison/issues",
   "codeowners": [
     "@iFerald"
   ],
-  "iot_class": "local_polling",
-  "config_flow": true
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ]
 }

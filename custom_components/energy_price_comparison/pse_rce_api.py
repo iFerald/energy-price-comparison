@@ -1,112 +1,129 @@
+"""PSE prices with persistent successful data and retryable gaps."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from datetime import date, datetime, time, timedelta, timezone
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 import aiohttp
-
-from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
-from homeassistant.util import dt as dt_util
 
-_STORAGE_KEY = "energy_price_comparison_rce_cache_v1"
-_STORAGE_VERSION = 1
+from .calculation import finite_number
 
 API_URL = "https://api.raporty.pse.pl/api/rce-pln"
+WARSAW = ZoneInfo("Europe/Warsaw")
+_LOGGER = logging.getLogger(__name__)
 
-@dataclass(slots=True)
+
+@dataclass(frozen=True, slots=True)
 class RCEBin:
     start_utc: datetime
     end_utc: datetime
     price_pln_per_kwh: float
 
+
 def business_date_for_local_dt(local_dt: datetime) -> date:
-    """Business date is the local calendar date."""
-    return local_dt.date()
+    return local_dt.astimezone(WARSAW).date()
+
+
+def decode_bins(raw: list[dict]) -> list[RCEBin]:
+    result = {}
+    for item in raw:
+        try:
+            start, end = datetime.fromisoformat(item["s"]), datetime.fromisoformat(item["e"])
+            price = finite_number(item["p"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if start.tzinfo is None or end.tzinfo is None or price is None or end <= start:
+            continue
+        start, end = start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+        result[start] = RCEBin(start, end, price)
+    return sorted(result.values(), key=lambda item: item.start_utc)
+
+
+def complete_day(day: date, bins: list[RCEBin]) -> bool:
+    cursor = datetime.combine(day, time(), WARSAW).astimezone(timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), time(), WARSAW).astimezone(timezone.utc)
+    for item in bins:
+        if item.start_utc != cursor or item.end_utc - item.start_utc != timedelta(minutes=15):
+            return False
+        cursor = item.end_utc
+    return cursor == end
+
 
 class RCEApiClient:
-    """Fetches and caches PSE RCE 15-min prices per business_date."""
-
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass):
         self.hass = hass
-        self._store = Store[dict[str, Any]](hass, _STORAGE_VERSION, _STORAGE_KEY)
-        self._cache: dict[str, list[dict[str, Any]]] | None = None
+        # Keep compatibility with the owner's installed 0.0.13 cache.
+        self._store = Store(hass, 1, "energy_price_comparison_rce_cache_v1")
+        self._cache = None
+        self._load_lock = asyncio.Lock()
+        self._locks = {}
+        self._retry_at = {}
+        self._semaphore = asyncio.Semaphore(3)
 
-    async def _load(self) -> None:
-        if self._cache is not None:
-            return
-        data = await self._store.async_load() or {}
-        self._cache = data.get("days", {})
-
-    async def _save(self) -> None:
-        if self._cache is None:
-            return
-        await self._store.async_save({"days": self._cache})
+    async def _load(self):
+        async with self._load_lock:
+            if self._cache is None:
+                data = await self._store.async_load() or {}
+                self._cache = data.get("days", {})
 
     async def get_day_bins(self, day: date) -> list[RCEBin]:
         await self._load()
-        assert self._cache is not None
-
         key = day.isoformat()
-        if key in self._cache:
-            return self._decode_bins(self._cache[key])
-
-        raw = await self._fetch_day(day)
-        # Cache even empty (prevents hammering API for missing days)
-        self._cache[key] = raw
-        await self._save()
-        return self._decode_bins(raw)
-
-    async def _fetch_day(self, day: date) -> list[dict[str, Any]]:
-        # OData filter (business_date eq 'YYYY-MM-DD')
-        url = f"{API_URL}?$filter=business_date%20eq%20'{day.isoformat()}'"
-        session = aiohttp.ClientSession()
-        try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-        finally:
-            await session.close()
-
-        values = data.get("value", [])
-        out: list[dict[str, Any]] = []
-        for it in values:
-            dtime_utc = it.get("dtime_utc")
-            rce_pln = it.get("rce_pln")
-            if not dtime_utc or rce_pln is None:
-                continue
-            # dtime_utc format: YYYY-MM-DD HH:MM:SS
+        async with self._locks.setdefault(key, asyncio.Lock()):
+            now = datetime.now(timezone.utc)
+            existing = decode_bins(self._cache.get(key, []))
+            if complete_day(day, existing) and day < now.astimezone(WARSAW).date():
+                return existing
+            if now < self._retry_at.get(key, datetime.min.replace(tzinfo=timezone.utc)):
+                return existing
+            self._retry_at[key] = now + timedelta(minutes=15)
             try:
-                end = datetime.strptime(dtime_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            except Exception:
-                continue
-            start = end - timedelta(minutes=15)
-            price = float(rce_pln) / 1000.0  # PLN/MWh -> PLN/kWh
-            out.append(
-                {
-                    "s": start.isoformat(),
-                    "e": end.isoformat(),
-                    "p": price,
-                }
-            )
+                async with self._semaphore:
+                    raw = await self._fetch_day(day)
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError) as error:
+                _LOGGER.warning("PSE prices for %s could not be refreshed: %s", key, error)
+                return existing
+            # A failed/incomplete refresh must not discard already known prices.
+            merged = {item["s"]: item for item in self._cache.get(key, []) if isinstance(item, dict) and "s" in item}
+            merged.update({item["s"]: item for item in raw})
+            self._cache[key] = list(merged.values())
+            self._store.async_delay_save(lambda: {"days": self._cache}, 5)
+            return decode_bins(self._cache[key])
 
-        out.sort(key=lambda x: x["s"])
-        return out
-
-    def _decode_bins(self, raw: list[dict[str, Any]]) -> list[RCEBin]:
-        bins: list[RCEBin] = []
-        for it in raw:
-            try:
-                s = datetime.fromisoformat(it["s"])
-                e = datetime.fromisoformat(it["e"])
-                p = float(it["p"])
-            except Exception:
-                continue
-            if s.tzinfo is None:
-                s = s.replace(tzinfo=timezone.utc)
-            if e.tzinfo is None:
-                e = e.replace(tzinfo=timezone.utc)
-            bins.append(RCEBin(start_utc=s, end_utc=e, price_pln_per_kwh=p))
-        bins.sort(key=lambda b: b.start_utc)
-        return bins
+    async def _fetch_day(self, day: date) -> list[dict]:
+        url = API_URL
+        params = {"$filter": f"business_date eq '{day.isoformat()}'", "$first": "1000"}
+        result = []
+        seen = set()
+        for _ in range(10):
+            if url in seen:
+                raise ValueError("Repeated PSE pagination link")
+            seen.add(url)
+            async with async_get_clientsession(self.hass).get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                response.raise_for_status()
+                data = await response.json()
+            for item in data.get("value", []):
+                if item.get("business_date") != day.isoformat():
+                    continue
+                try:
+                    end = datetime.fromisoformat(item["dtime_utc"]).replace(tzinfo=timezone.utc)
+                    price = finite_number(item["rce_pln"])
+                except (KeyError, ValueError, TypeError):
+                    continue
+                if price is None:
+                    continue
+                result.append({"s": (end - timedelta(minutes=15)).isoformat(), "e": end.isoformat(), "p": price / 1000})
+            following = data.get("nextLink") or data.get("@odata.nextLink")
+            if not following:
+                return result
+            parts = urlsplit(following)
+            if parts.scheme != "https" or parts.netloc != "api.raporty.pse.pl" or parts.path != "/api/rce-pln":
+                raise ValueError("Unexpected PSE pagination destination")
+            url, params = following, None
+        raise ValueError("Too many PSE result pages")

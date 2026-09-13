@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Energy Price Comparison",
-        "description": "### Sensors\nCurrent RCE Price Sensor (PLN/MWh)\nTotal Energy Bought Sensor (kWh)\n\n### Tariff rates\nG11 / G12 / G12w / G12n (PLN/kWh)\n\n### Ranges\nEnter time ranges as HH:MM.",
+        "description": "Compare the same grid-import consumption using configured net energy rates and historical PSE RCE prices. Totals exclude VAT, distribution and supplier fees. Use a cumulative energy meter. Times are HH:MM in Home Assistant's time zone; G12/G12w summer hours follow DST. G12w weekends and G12n Sundays use the night rate; public holidays are not separately modelled. Saving options recalculates all periods using the new rates.",
         "data": {
           "price_entity": "Current RCE Price Sensor (PLN/MWh)",
           "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)",
@@ -19,7 +19,7 @@
           "g12w_night_rate_pln_per_kwh": "G12w Night Rate (PLN/kWh)",
           "g12n_day_rate_pln_per_kwh": "G12n Day Rate (PLN/kWh)",
           "g12n_night_rate_pln_per_kwh": "G12n Night Rate (PLN/kWh)",
-          "total_energy_entity": "Total Energy Bought Sensor (kWh)",
+          "total_energy_entity": "Cumulative imported energy sensor (Wh/kWh/MWh)",
           "g12w_day_range_1_start": "G12w Day Range 1 Start",
           "g12w_day_range_2_summer_start": "G12w Day Range 2 Summer Start",
           "g12w_night_range_1_summer_start": "G12w Night Range 1 Summer Start",
@@ -33,13 +33,19 @@
     },
     "abort": {
       "already_configured": "Energy Price Comparison is already set up. Use the configure button (⚙️) to change configuration."
+    },
+    "error": {
+      "invalid_rate": "Enter a finite, non-negative net rate in PLN/kWh.",
+      "invalid_time": "Enter a valid time as HH:MM.",
+      "invalid_energy_source": "Choose a cumulative energy sensor (Wh, kWh or MWh) with total or total_increasing state class.",
+      "invalid_ranges": "Day/night boundaries must be in chronological order and must not be equal."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Energy Price Comparison",
-        "description": "### Sensors\nCurrent RCE Price Sensor (PLN/MWh)\nTotal Energy Bought Sensor (kWh)\n\n### Tariff rates\nG11 / G12 / G12w / G12n (PLN/kWh)\n\n### Ranges\nEnter time ranges as HH:MM.",
+        "description": "Compare the same grid-import consumption using configured net energy rates and historical PSE RCE prices. Totals exclude VAT, distribution and supplier fees. Use a cumulative energy meter. Times are HH:MM in Home Assistant's time zone; G12/G12w summer hours follow DST. G12w weekends and G12n Sundays use the night rate; public holidays are not separately modelled. Saving options recalculates all periods using the new rates.",
         "data": {
           "price_entity": "Current RCE Price Sensor (PLN/MWh)",
           "g11_rate_pln_per_kwh": "G11 rate (PLN/kWh)",
@@ -55,7 +61,7 @@
           "g12w_night_rate_pln_per_kwh": "G12w Night Rate (PLN/kWh)",
           "g12n_day_rate_pln_per_kwh": "G12n Day Rate (PLN/kWh)",
           "g12n_night_rate_pln_per_kwh": "G12n Night Rate (PLN/kWh)",
-          "total_energy_entity": "Total Energy Bought Sensor (kWh)",
+          "total_energy_entity": "Cumulative imported energy sensor (Wh/kWh/MWh)",
           "g12w_day_range_1_start": "G12w Day Range 1 Start",
           "g12w_day_range_2_summer_start": "G12w Day Range 2 Summer Start",
           "g12w_night_range_1_summer_start": "G12w Night Range 1 Summer Start",
@@ -66,6 +72,12 @@
           "g12n_night_start": "G12n Night Start"
         }
       }
+    },
+    "error": {
+      "invalid_rate": "Enter a finite, non-negative net rate in PLN/kWh.",
+      "invalid_time": "Enter a valid time as HH:MM.",
+      "invalid_energy_source": "Choose a cumulative energy sensor (Wh, kWh or MWh) with total or total_increasing state class.",
+      "invalid_ranges": "Day/night boundaries must be in chronological order and must not be equal."
     }
   }
 }
